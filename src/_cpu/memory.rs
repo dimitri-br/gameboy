@@ -108,7 +108,7 @@ impl Memory{
             }
             0x1000..=0x7000 => {self.rom[address as usize]}
             0x8000..=0x9000 => {
-                self.gpu.rb_vram((address & 0x1FFF) as usize)
+                self.gpu.rb((address & 0x1FFF) as usize)
             }
             0xA000..=0xB000 => {
                 self.eram[(address & 0x1FFF) as usize]
@@ -123,7 +123,7 @@ impl Memory{
                     }
                     0xE00 => {
                         if address < 0xFEA0{
-                            self.gpu.rb_oam((address & 0xFF) as usize)
+                            self.gpu.rb((address & 0xFF) as usize)
                         }else{
                             0
                         }
@@ -133,6 +133,12 @@ impl Memory{
                             self.zram[(address & 0x7F)as usize]
                         }else{
                             //io handling go here
+                            match address & 0x00F0{
+                                0x40..=0x70 => {
+                                    return self.gpu.rb(address as usize)
+                                }
+                                _ => { return 0 }
+                            }
                             0
                         }
                     }
@@ -147,7 +153,7 @@ impl Memory{
         match address & 0xF000{
             0x0000 => {if self.in_bios{ if address < 0x100 {self.bios[address as usize] = value}else{self.rom[address as usize] = value;}}else{self.rom[address as usize] = value;}}
             0x1000..=0x7000 => {self.rom[address as usize] = value;}
-            0x8000..=0x9000 => {self.gpu.wb_vram(address as usize, value); self.gpu.update_tileset(address, value);}
+            0x8000..=0x9000 => {self.gpu.wb(address as usize, value); self.gpu.update_tileset(address, value);}
             0xA000..=0xB000 => {self.eram[address as usize] = value;}
             0xC000..=0xE000 => {self.wram[address as usize] = value;}
             0xF000 => { match address & 0x0F00{
@@ -156,7 +162,7 @@ impl Memory{
                 }
                 0xE00 => {
                     if address < 0xFEA0{
-                        self.gpu.wb_oam((address & 0xFF) as usize, value)
+                        self.gpu.wb((address & 0xFF) as usize, value)
                     }else{
                         0;
                     }
@@ -166,6 +172,12 @@ impl Memory{
                         self.zram[(address & 0x7F)as usize] = value;
                     }else{
                         //io handling go here
+                        match address & 0x00F0{
+                            0x40..=0x70 => {
+                                self.gpu.wb(address as usize, value);
+                            }
+                            _ => { 0; }
+                        };
                         0;
                     }
                 }
