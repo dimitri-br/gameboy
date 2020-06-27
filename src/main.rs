@@ -41,9 +41,11 @@ fn main(){
 
     let mut cpu = CPU::new();
     cpu.load_rom();
+    //cpu.memory.set_initial();
     let mut step = 0;
     println!("Debugging! \n\n");
     'running: loop{
+        
         //clr screen
         canvas.set_draw_color(Color::RGB(0,0,0));
         canvas.clear();
@@ -63,9 +65,7 @@ fn main(){
                 _ => {}
             }
         }
-        if cpu.registers.pc >= 0x100 * 2{
-            break;
-        }
+
         cpu.step();
         step += 1;
         if cpu.memory.rb(0xFF02) == 0x81{

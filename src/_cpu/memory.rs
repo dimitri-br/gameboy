@@ -36,10 +36,12 @@ pub struct Memory{
     pub gpu: GPU,
     pub in_bios: bool,
     bios: [u8; 0x100], //bios (becomes available to rom after boot)
-    rom: [u8; 0x7FFF], //rom
+    rom: [u8; 0x8000], //rom
     wram: [u8; 0x2000], //working ram
     eram: [u8; 0x2000], //external ram (On cartridge)
-    zram: [u8; 0x80] //zero ram (everything 0xFF80 +)
+    zram: [u8; 0x80], //zero ram (everything 0xFF80 +)
+
+    pub interrupt_flags: u8,
 }
 
 impl Memory{
@@ -48,10 +50,12 @@ impl Memory{
             gpu: GPU::new(),
             in_bios: true,
             bios: [0x0; 0x100],
-            rom: [0x0; 0x7FFF],
+            rom: [0x0; 0x8000],
             wram: [0x0; 0x2000],
             eram: [0x0; 0x2000],
-            zram: [0x0; 0x80]
+            zram: [0x0; 0x80],
+
+            interrupt_flags: 0,
         }
     }
     pub fn set_initial(&mut self) {
@@ -87,8 +91,11 @@ impl Memory{
         self.wb(0xFF4A, 0);
         self.wb(0xFF4B, 0);
     }
+    pub fn check_gpu(&mut self){
+        
+    }
 
-    pub fn rb(&self, address: u16) -> u8{
+    pub fn rb(&mut self, address: u16) -> u8{
         //TODO - Add memory map
         match address & 0xF000{
             0x0000 => {
@@ -149,11 +156,12 @@ impl Memory{
         }
     }
     pub fn wb(&mut self, address: u16, value: u8){
+       // println!("{:#x?}",address);
         //TODO - Add memory map
         match address & 0xF000{
             0x0000 => {if self.in_bios{ if address < 0x100 {self.bios[address as usize] = value}else{self.rom[address as usize] = value;}}else{self.rom[address as usize] = value;}}
             0x1000..=0x7000 => {self.rom[address as usize] = value;}
-            0x8000..=0x9000 => {self.gpu.wb(address as usize, value); self.gpu.update_tileset(address, value);}
+            0x8000..=0x9000 => {self.gpu.vram[(address & 0x1FFF) as usize] = value; self.gpu.update_tileset(address, value);}
             0xA000..=0xB000 => {self.eram[address as usize] = value;}
             0xC000..=0xE000 => {self.wram[address as usize] = value;}
             0xF000 => { match address & 0x0F00{
@@ -162,10 +170,12 @@ impl Memory{
                 }
                 0xE00 => {
                     if address < 0xFEA0{
-                        self.gpu.wb((address & 0xFF) as usize, value)
+                        let mut locations : [u8; 160] = [0x0; 160];
+                        self.gpu.wb((address & 0xFF) as usize, value, locations)
                     }else{
                         0;
                     }
+                    self.gpu.update_oam(address, value);
                 }
                 0xF00 => {
                     if address >= 0xFF80{
@@ -174,7 +184,11 @@ impl Memory{
                         //io handling go here
                         match address & 0x00F0{
                             0x40..=0x70 => {
-                                self.gpu.wb(address as usize, value);
+                                let mut locations : [u8; 160] = [0x0; 160];
+                                for i in 0..160{
+                                    locations[i] = self.rb(((value as u16) << 8) + i as u16);
+                                }
+                                self.gpu.wb(address as usize, value, locations);
                             }
                             _ => { 0; }
                         };

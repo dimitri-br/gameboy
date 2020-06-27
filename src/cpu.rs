@@ -55,7 +55,7 @@ impl CPU {
     pub fn load_rom(&mut self){
         let mut rom = ROM::new(String::from("./roms/boot.bin"));
         rom.load();
-        let mut index = 0x0;
+        let mut index = 0x100;
         for line in rom.content.iter(){
             self.memory.wb(index, *line);
             index += 1;
@@ -83,7 +83,8 @@ impl CPU {
         println!("DEBUG:\nOpcode: {:#x?}\nPC: {}\nSP: {}\nA: {}\nC: {}\nHL: {}\nV: {}",opcode, self.registers.pc, self.registers.sp, self.registers.a, self.registers.c, self.registers.get_hl(), v);
         let delay = self.execute(opcode, v);
 
-        self.memory.gpu.step(delay);
+        let IF = self.memory.gpu.step(delay);
+        self.memory.interrupt_flags |= IF;
     }
 
     pub fn execute(&mut self, opcode: u8, v: usize) -> u8{
@@ -102,8 +103,19 @@ impl CPU {
                     self.registers.pc += 2;
                     8
                 }
+                0x8 => {
+                    self.memory.wb(v as u16, (self.registers.sp >> 8) as u8);
+                    self.memory.wb(((v + 1) as u16), (self.registers.sp & 0xFF) as u8);
+                    self.registers.pc += 3;
+                    20
+                }
                 0xC => {
                     self.inc(Target::C);
+                    self.registers.pc += 1;
+                    4
+                }
+                0xD => {
+                    self.dec(Target::C);
                     self.registers.pc += 1;
                     4
                 }
@@ -117,16 +129,38 @@ impl CPU {
                     self.registers.pc += 3;
                     12
                 }
+                0x12 => {
+                    self.memory.wb(self.registers.get_de(), self.registers.a);
+                    self.registers.pc += 1;
+                    16
+                }
+                0x14 => {
+                    self.inc(Target::D);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x17 =>  {
+                    self.rla();
+                    self.registers.pc += 1;
+                    4
+                }
                 0x1A => {
-                    self.ld(Target::A, self.memory.rb(self.registers.get_de()) as usize);
+                    let val = self.memory.rb(self.registers.get_de()) as usize;
+                    self.ld(Target::A, val);
                     self.registers.pc += 1;
                     8
+                }
+                0x1C => {
+                    self.inc(Target::C);
+                    self.registers.pc += 1;
+                    4
                 }
                 0x20 => {
                     self.registers.pc += 2;
                     if !self.registers.get_zero(){
                         let new_val = v as i8;
-                        let new_val = (new_val as i32 + self.registers.pc as u32 as i32) as i32;
+                        let pc = self.registers.pc as i16;
+                        let new_val = pc.wrapping_add(new_val as i16);
                         self.registers.pc = new_val as u16;
                         12
                     }else{
@@ -149,15 +183,38 @@ impl CPU {
                     self.registers.pc += 1;
                     8
                 }
+                0x2A => {
+                    let val = self.memory.rb(self.registers.get_hl()) as usize;
+                    self.ld(Target::A, val);
+                    self.registers.set_hl(self.registers.get_hl().wrapping_add(1));
+                    self.registers.pc += 1;
+                    8
+                }
                 0x31 => {
                     self.ld(Target::SP, v);
                     self.registers.pc += 3;
                     12
                 }
                 0x32 => {
-                    self.inc(Target::SP);
+                    self.memory.wb(self.registers.get_hl(), self.registers.a);
+                    self.registers.set_hl(self.registers.get_hl().wrapping_sub(1));
                     self.registers.pc += 1;
                     8
+                }
+                0x3C => {
+                    self.inc(Target::A);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x3E => {
+                    self.ld(Target::A, v);
+                    self.registers.pc += 2;
+                    8
+                }
+                0x47 => {
+                    self.ld(Target::B, self.registers.a as usize);
+                    self.registers.pc += 1;
+                    4
                 }
                 0x4F => {
                     self.ld(Target::C, self.registers.a as usize);
@@ -169,10 +226,15 @@ impl CPU {
                     self.registers.pc += 1;
                     8
                 }
-                0x3E => {
-                    self.ld(Target::A, v);
-                    self.registers.pc += 2;
-                    8
+                0x88 => {
+                    self.adc(Target::A, self.registers.b as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x89 => {
+                    self.adc(Target::A, self.registers.c as usize);
+                    self.registers.pc += 1;
+                    4
                 }
                 0xAF => {
                     self.xor(self.registers.a);
@@ -186,6 +248,10 @@ impl CPU {
                     self.registers.pc += 1;
                     16
                 }
+                0xC3 => {
+                    self.registers.pc = v as u16;
+                    16
+                }
                 0xC5 => {
                     self.memory.wb(self.registers.sp.wrapping_sub(1), self.registers.b);
                     self.memory.wb(self.registers.sp.wrapping_sub(2), self.registers.c);
@@ -193,18 +259,35 @@ impl CPU {
                     self.registers.pc += 1;
                     16
                 }
+                0xC6 => {
+                    self.add(Target::A, v as usize);
+                    self.registers.pc += 2;
+                    8
+                }
                 0xC9 => {
                     self.registers.pc = (self.memory.rb(self.registers.sp.wrapping_add(1)) as u16) << 8;
                     self.registers.pc |= self.memory.rb(self.registers.sp) as u16;
                     self.registers.sp = self.registers.sp.wrapping_add(2);
-                    self.registers.pc += 1;
-                    20
+                    16
                 }
                 0xCB => {
                     self.registers.pc += 1;
-                    let delay = self.execute_cb(self.memory.rb(self.registers.pc), v);
+                    let val = self.memory.rb(self.registers.pc);
+                    let delay = self.execute_cb(val, v);
                     self.registers.pc += 2;
                     4 + delay
+                }
+                0xCC => {
+                    self.registers.pc += 3;
+                    if self.registers.get_zero(){
+                        self.memory.wb(self.registers.sp.wrapping_sub(1), (self.registers.pc >> 8) as u8);
+                        self.memory.wb(self.registers.sp.wrapping_sub(2), (self.registers.pc & 0xFF) as u8);
+                        self.registers.sp = self.registers.sp.wrapping_sub(2);
+                        self.registers.pc = v as u16;
+                        24
+                    }else{
+                        12
+                    }
                 }
                 0xCD => {
                     self.registers.pc += 3;
@@ -214,13 +297,23 @@ impl CPU {
                     self.registers.pc = v as u16;
                     24
                 }
+                0xD9 => {
+                    self.registers.pc = (self.memory.rb(self.registers.sp.wrapping_add(1)) as u16) << 8;
+                    self.registers.pc |= self.memory.rb(self.registers.sp) as u16;
+                    self.registers.sp = self.registers.sp.wrapping_add(2);
+                    16
+                }
+                0xDD => {
+                    self.registers.pc += 1;
+                    4
+                }
                 0xE0 => {
                     self.memory.wb(((v as u8) as u16) + 0xff00, self.registers.a);
                     self.registers.pc += 2;
                     12
                 }
                 0xE2 => {
-                    self.memory.wb((self.registers.c as u16) + 0xff00, v as u8);
+                    self.memory.wb(0xff00 + (self.registers.c as u16), v as u8);
                     self.registers.pc += 1;
                     8
                 }
@@ -245,7 +338,8 @@ impl CPU{
                 8
             }
             0x7C => {
-                self.set(Target::A, 0);
+                self.set(Target::H, 7);
+                self.registers.set_half(true);
                 8
             }
             _ => { panic!("Opcode: CB -> {:#x?}", opcode)}
@@ -335,7 +429,7 @@ impl CPU {
             Target::SP => {
                 let (new_value, did_overflow) = self.registers.sp.overflowing_add(value as u16);
 
-                self.registers.set_zero(new_value == 0);
+                self.registers.set_zero(false);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(false);
                 self.registers.set_half((self.registers.sp & 0xFFF).overflowing_add((value & 0xFFF) as u16).1);
@@ -345,7 +439,6 @@ impl CPU {
             Target::HL => {
                 let (new_value, did_overflow) = self.registers.get_hl().overflowing_add(value as u16);
 
-                self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(false);
                 self.registers.set_half((self.registers.get_hl() & 0xFFF).overflowing_add(value as u16 & 0xFFF).1);
@@ -355,7 +448,7 @@ impl CPU {
             Target::DE => {
                 let (new_value, did_overflow) = self.registers.get_de().overflowing_add(value as u16);
 
-                self.registers.set_zero(new_value == 0);
+
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(false);
                 self.registers.set_half((self.registers.get_de() & 0xFFF).overflowing_add(value as u16 & 0xFFF).1);
@@ -365,7 +458,7 @@ impl CPU {
             Target::BC => {
                 let (new_value, did_overflow) = self.registers.get_bc().overflowing_add(value as u16);
 
-                self.registers.set_zero(new_value == 0);
+
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(false);
                 self.registers.set_half((self.registers.get_bc() & 0xFFF).overflowing_add(value as u16 & 0xFFF).1);
@@ -654,6 +747,9 @@ impl CPU {
     fn xor(&mut self, value: u8){
         let new_value = self.registers.a ^ value;
         self.registers.set_zero(new_value == 0);
+        self.registers.set_sub(false);
+        self.registers.set_carry(false);
+        self.registers.set_half(false);
         self.registers.a = new_value;
     }
     fn cp(&mut self, target: Target, value: usize){
@@ -729,7 +825,7 @@ impl CPU {
                 let (new_value, did_overflow) = self.registers.a.overflowing_add(value as u8);
 
                 self.registers.set_zero(new_value == 0);
-                self.registers.set_carry(false);
+
                 self.registers.set_sub(false);
                 self.registers.set_half((self.registers.a & 0xF).overflowing_add(value as u8 & 0xF).1);
                 
@@ -739,7 +835,6 @@ impl CPU {
                 let (new_value, did_overflow) = self.registers.b.overflowing_add(value as u8);
 
                 self.registers.set_zero(new_value == 0);
-                self.registers.set_carry(false);
                 self.registers.set_sub(false);
                 self.registers.set_half((self.registers.b & 0xF).overflowing_add(value as u8 & 0xF).1);                
                 self.registers.b = new_value;
@@ -748,7 +843,6 @@ impl CPU {
                 let (new_value, did_overflow) = self.registers.c.overflowing_add(value as u8);
 
                 self.registers.set_zero(new_value == 0);
-                self.registers.set_carry(false);
                 self.registers.set_sub(false);
                 self.registers.set_half((self.registers.c & 0xF).overflowing_add(value as u8 & 0xF).1);                
                 self.registers.c = new_value;
@@ -757,7 +851,6 @@ impl CPU {
                 let (new_value, did_overflow) = self.registers.d.overflowing_add(value as u8);
 
                 self.registers.set_zero(new_value == 0);
-                self.registers.set_carry(false);
                 self.registers.set_sub(false);
                 self.registers.set_half((self.registers.d & 0xF).overflowing_add(value as u8 & 0xF).1);                
                 self.registers.d = new_value;
@@ -766,7 +859,6 @@ impl CPU {
                 let (new_value, did_overflow) = self.registers.e.overflowing_add(value as u8);
 
                 self.registers.set_zero(new_value == 0);
-                self.registers.set_carry(false);
                 self.registers.set_sub(false);
                 self.registers.set_half((self.registers.e & 0xF).overflowing_add(value as u8 & 0xF).1);                
                 self.registers.e = new_value;
@@ -778,7 +870,6 @@ impl CPU {
                 let (new_value, did_overflow) = self.registers.h.overflowing_add(value as u8);
 
                 self.registers.set_zero(new_value == 0);
-                self.registers.set_carry(false);
                 self.registers.set_sub(false);
                 self.registers.set_half((self.registers.h & 0xF).overflowing_add(value as u8 & 0xF).1);                
                 self.registers.h = new_value;
@@ -787,7 +878,6 @@ impl CPU {
                 let (new_value, did_overflow) = self.registers.l.overflowing_add(value as u8);
 
                 self.registers.set_zero(new_value == 0);
-                self.registers.set_carry(did_overflow);
                 self.registers.set_sub(false);
                 self.registers.set_half((self.registers.l & 0xF).overflowing_add(value as u8 & 0xF).1);                
                 self.registers.l = new_value;
@@ -795,40 +885,25 @@ impl CPU {
             Target::SP => {
                 let (new_value, did_overflow) = self.registers.sp.overflowing_add(value as u16);
 
-                self.registers.set_zero(false);
-                self.registers.set_carry(false);
-                self.registers.set_sub(false);
-                self.registers.set_half(false);
-                
                 self.registers.sp = new_value;
             }
             Target::HL => {
                 let (new_value, did_overflow) = self.registers.get_hl().overflowing_add(value as u16);
 
-                self.registers.set_zero(false);
-                self.registers.set_carry(false);
-                self.registers.set_sub(false);
-                self.registers.set_half(false);
                 
                 self.registers.set_hl(new_value);
             }
             Target::DE => {
                 let (new_value, did_overflow) = self.registers.get_de().overflowing_add(value as u16);
 
-                self.registers.set_zero(false);
-                self.registers.set_carry(false);
-                self.registers.set_sub(false);
-                self.registers.set_half(false);
+
                 
                 self.registers.set_de(new_value);
             }
             Target::BC => {
                 let (new_value, did_overflow) = self.registers.get_bc().overflowing_add(value as u16);
 
-                self.registers.set_zero(false);
-                self.registers.set_carry(false);
-                self.registers.set_sub(false);
-                self.registers.set_half(false);
+
                 
                 self.registers.set_bc(new_value);
             }
@@ -994,7 +1069,8 @@ impl CPU {
             },
 
             Target::HL => {//mem address
-                self.memory.wb(self.registers.get_hl(), self.memory.rb(self.registers.get_hl()) ^ value);
+                let val =self.memory.rb(self.registers.get_hl()) ^ value;
+                self.memory.wb(self.registers.get_hl(), val);
                 self.registers.set_zero(self.memory.rb(self.registers.get_hl()) == 0);
                 self.registers.set_half(true);
                 self.registers.set_sub(false);
@@ -1028,7 +1104,8 @@ impl CPU {
             },
 
             Target::HL => {//mem address
-                self.memory.wb(self.registers.get_hl(), self.memory.rb(self.registers.get_hl()) & !(1 << value));
+                let val = self.memory.rb(self.registers.get_hl()) & !(1 << value);
+                self.memory.wb(self.registers.get_hl(), val);
             }, 
             _ => {}
 
@@ -1059,7 +1136,8 @@ impl CPU {
             },
 
             Target::HL => {//mem address
-                self.memory.wb(self.registers.get_hl(), self.memory.rb(self.registers.get_hl()) | 1 << value);
+                let val = self.memory.rb(self.registers.get_hl()) | 1 << value;
+                self.memory.wb(self.registers.get_hl(), val);
             }, 
             _ => {}
 
@@ -1104,7 +1182,8 @@ impl CPU {
             },
 
             Target::HL => {//mem address
-                self.memory.wb(self.registers.get_hl(), self.memory.rb(self.registers.get_hl()) >> 1);
+                let val =self.memory.rb(self.registers.get_hl()) >> 1;
+                self.memory.wb(self.registers.get_hl(), val);
                 self.registers.set_zero(self.memory.rb(self.registers.get_hl()) == 0);
                 self.registers.set_carry(self.memory.rb(self.registers.get_hl()) > 0xFF);
             }, 
@@ -1115,76 +1194,69 @@ impl CPU {
     fn rr(&mut self, target: Target){ //value is bit number to set (0 - 7)
         match target{
             Target::A => {
-                self.registers.set_carry(if self.registers.a & 0x80 == 1 { true } else { false });
-                self.registers.a <<= 1;
-
-                self.registers.set_zero(self.registers.a == 0);
+                let (val, overflow) = self.registers.a.overflowing_shr(1);
+                self.registers.set_zero(val == 0);
                 self.registers.set_half(false);
                 self.registers.set_sub(false);
-                self.registers.set_carry(self.registers.a > 0xFF);
+                self.registers.set_carry(overflow);
+                self.registers.a = val;
             },
             Target::B => {
-                self.registers.set_carry(if self.registers.b & 0x80 == 1 { true } else { false });
-                self.registers.b <<= 1;
-
-                self.registers.set_zero(self.registers.b == 0);
+                let (val, overflow) = self.registers.b.overflowing_shr(1);
+                self.registers.set_zero(val == 0);
                 self.registers.set_half(false);
                 self.registers.set_sub(false);
-                self.registers.set_carry(self.registers.b > 0xFF);
+                self.registers.set_carry(overflow);
+                self.registers.b = val;
             },
             Target::C => {
-                self.registers.set_carry(if self.registers.c & 0x80 == 1 { true } else { false });
-                self.registers.c <<= 1;
-
-                self.registers.set_zero(self.registers.c == 0);
+                let (val, overflow) = self.registers.c.overflowing_shr(1);
+                self.registers.set_zero(val == 0);
                 self.registers.set_half(false);
                 self.registers.set_sub(false);
-                self.registers.set_carry(self.registers.c > 0xFF);
+                self.registers.set_carry(overflow);
+                self.registers.c = val;
             },
             Target::D => {
-                self.registers.set_carry(if self.registers.d & 0x80 == 1 { true } else { false });
-                self.registers.d <<= 1;
-
-                self.registers.set_zero(self.registers.d == 0);
+                let (val, overflow) = self.registers.d.overflowing_shr(1);
+                self.registers.set_zero(val == 0);
                 self.registers.set_half(false);
                 self.registers.set_sub(false);
-                self.registers.set_carry(self.registers.d > 0xFF);
+                self.registers.set_carry(overflow);
+                self.registers.d = val;
             },
             Target::E => {
-                self.registers.set_carry(if self.registers.e & 0x80 == 1 { true } else { false });
-                self.registers.e <<= 1;
-
-                self.registers.set_zero(self.registers.e == 0);
+                let (val, overflow) = self.registers.e.overflowing_shr(1);
+                self.registers.set_zero(val == 0);
                 self.registers.set_half(false);
                 self.registers.set_sub(false);
-                self.registers.set_carry(self.registers.e > 0xFF);
+                self.registers.set_carry(overflow);
+                self.registers.e = val;
             },
             Target::H => {
-                self.registers.set_carry(if self.registers.h & 0x80 == 1 { true } else { false });
-                self.registers.h <<= 1;
-
-                self.registers.set_zero(self.registers.h == 0);
+                let (val, overflow) = self.registers.h.overflowing_shr(1);
+                self.registers.set_zero(val == 0);
                 self.registers.set_half(false);
                 self.registers.set_sub(false);
-                self.registers.set_carry(self.registers.h > 0xFF);
+                self.registers.set_carry(overflow);
+                self.registers.h = val;
             },
             Target::L => {
-                self.registers.set_carry(if self.registers.l & 0x80 == 1 { true } else { false });
-                self.registers.l <<= 1;
-
-                self.registers.set_zero(self.registers.l == 0);
+                let (val, overflow) = self.registers.l.overflowing_shr(1);
+                self.registers.set_zero(val == 0);
                 self.registers.set_half(false);
                 self.registers.set_sub(false);
-                self.registers.set_carry(self.registers.l > 0xFF);
+                self.registers.set_carry(overflow);
+                self.registers.l = val;
             },
 
             Target::HL => {//mem address
-                self.registers.set_carry(if self.memory.rb(self.registers.get_hl()) & 0x80 == 1 { true } else { false });
-                self.memory.wb(self.registers.get_hl(), self.memory.rb(self.registers.get_hl()) << 1);
-                self.registers.set_zero(self.memory.rb(self.registers.get_hl()) == 0);
+                let (val, overflow) = self.memory.rb(self.registers.get_hl()).overflowing_shr(1);
+                self.registers.set_zero(val == 0);
                 self.registers.set_half(false);
                 self.registers.set_sub(false);
-                self.registers.set_carry(self.memory.rb(self.registers.get_hl()) > 0xFF);
+                self.registers.set_carry(overflow);
+                self.memory.wb(self.registers.get_hl(), val);
             }, 
             _ => {}
 
@@ -1193,74 +1265,83 @@ impl CPU {
     fn rl(&mut self, target: Target){ //value is bit number to set (0 - 7)
         match target{
             Target::A => {
-                self.registers.set_carry(if self.registers.a & 0x0 == 1 { true } else { false });
-                self.registers.a >>= 1;
-                self.registers.set_zero(self.registers.a == 0);
+
+                let (val, overflow) = self.registers.a.overflowing_shl(1);
+                self.registers.set_zero(val == 0);
                 self.registers.set_half(false);
                 self.registers.set_sub(false);
-                self.registers.set_carry(self.registers.a > 0xFF);
+                self.registers.set_carry(overflow);
+                self.registers.a = val;
             },
             Target::B => {
-                self.registers.set_carry(if self.registers.b & 0x0 == 1 { true } else { false });
-                self.registers.b >>= 1;
-                self.registers.set_zero(self.registers.b == 0);
+                let (val, overflow) = self.registers.b.overflowing_shl(1);
+                self.registers.set_zero(val == 0);
                 self.registers.set_half(false);
                 self.registers.set_sub(false);
-                self.registers.set_carry(self.registers.b > 0xFF);
+                self.registers.set_carry(overflow);
+                self.registers.b = val;
             },
             Target::C => {
-                self.registers.set_carry(if self.registers.b & 0x0 == 1 { true } else { false });
-                self.registers.b >>= 1;
-                self.registers.set_zero(self.registers.c == 0);
+                let (val, overflow) = self.registers.c.overflowing_shl(1);
+                self.registers.set_zero(val == 0);
                 self.registers.set_half(false);
                 self.registers.set_sub(false);
-                self.registers.set_carry(self.registers.c > 0xFF);
+                self.registers.set_carry(overflow);
+                self.registers.c = val;
             },
             Target::D => {
-                self.registers.set_carry(if self.registers.b & 0x0 == 1 { true } else { false });
-                self.registers.b >>= 1;
-                self.registers.set_zero(self.registers.d == 0);
+                let (val, overflow) = self.registers.d.overflowing_shl(1);
+                self.registers.set_zero(val == 0);
                 self.registers.set_half(false);
                 self.registers.set_sub(false);
-                self.registers.set_carry(self.registers.d > 0xFF);
+                self.registers.set_carry(overflow);
+                self.registers.d = val;
             },
             Target::E => {
-                self.registers.set_carry(if self.registers.e & 0x0 == 1 { true } else { false });
-                self.registers.e >>= 1;
-                self.registers.set_zero(self.registers.e == 0);
+                let (val, overflow) = self.registers.e.overflowing_shl(1);
+                self.registers.set_zero(val == 0);
                 self.registers.set_half(false);
                 self.registers.set_sub(false);
-                self.registers.set_carry(self.registers.e > 0xFF);
+                self.registers.set_carry(overflow);
+                self.registers.e = val;
             },
             Target::H => {
-                self.registers.set_carry(if self.registers.h & 0x0 == 1 { true } else { false });
-                self.registers.h >>= 1;
-                self.registers.set_zero(self.registers.h == 0);
+                let (val, overflow) = self.registers.h.overflowing_shl(1);
+                self.registers.set_zero(val == 0);
                 self.registers.set_half(false);
                 self.registers.set_sub(false);
-                self.registers.set_carry(self.registers.h > 0xFF);
+                self.registers.set_carry(overflow);
+                self.registers.h = val;
             },
             Target::L => {
-                self.registers.set_carry(if self.registers.l & 0x0 == 1 { true } else { false });
-                self.registers.l >>= 1;
-                self.registers.set_zero(self.registers.l == 0);
+                let (val, overflow) = self.registers.l.overflowing_shl(1);
+                self.registers.set_zero(val == 0);
                 self.registers.set_half(false);
                 self.registers.set_sub(false);
-                self.registers.set_carry(self.registers.l > 0xFF);
+                self.registers.set_carry(overflow);
+                self.registers.l = val;
             },
 
             Target::HL => {//mem address
-                self.registers.set_carry(if self.memory.rb(self.registers.get_hl()) & 0x0 == 1 { true } else { false });
-                self.memory.wb(self.registers.get_hl(), self.memory.rb(self.registers.get_hl()) >> 1);
-
-                self.registers.set_zero(self.memory.rb(self.registers.get_hl()) == 0);
+                let (val, overflow) = self.memory.rb(self.registers.get_hl()).overflowing_shl(1);
+                self.registers.set_zero(val == 0);
                 self.registers.set_half(false);
                 self.registers.set_sub(false);
-                self.registers.set_carry(self.memory.rb(self.registers.get_hl()) > 0xFF);
+                self.registers.set_carry(overflow);
+                self.memory.wb(self.registers.get_hl(), val);
             }, 
             _ => {}
 
         }
+    }
+    fn rla(&mut self){
+
+        let (val, overflow) = self.registers.a.overflowing_shl(1 + self.registers.get_carry() as u32);
+        self.registers.set_zero(false);
+        self.registers.set_half(false);
+        self.registers.set_sub(false);
+        self.registers.set_carry(overflow);
+        self.registers.a = val;
     }
 }
 

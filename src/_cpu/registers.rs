@@ -34,7 +34,7 @@ impl Registers{
             e: 0,
             h: 0,
             l: 0,
-            pc: 0x0, 
+            pc: 0x100, 
             sp: 0,
         }
     }

@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+use super::memory;
+
 pub struct GPU{
-    vram: [u8; 0x2000],
+    pub vram: [u8; 0x2000],
     reg: [u8; 0x2000],
     oam: [u8; 0xFF],
     pub screen: [u8; 144 * 160],
@@ -7,7 +10,8 @@ pub struct GPU{
     tileset: [[[u8; 8]; 8]; 384],
     mode: GPU_Mode,
     mode_clock: u16,
-    line: u8,
+    curline: u8,
+    curscan: u16,
     scy: u8,
     scx: u8,
     winx: u8,
@@ -20,8 +24,11 @@ pub struct GPU{
     bg_on: bool,
     obj_on: bool,
     scanline: u8,
+    obj_data: Vec::<HashMap::<String, i8>>,
+    obj_data_sorted: Vec::<HashMap::<String, i8>>,
+    scanrow: [u8; 160],
     obj_size: u8,
-    int_fired: bool,
+    int_fired: u8,
     raster: u8,
     ints: u8,
 
@@ -38,9 +45,16 @@ impl GPU {
             screen: [0x0; 144 * 160],
             pal: [[0x0; 4]; 3],
             tileset: [[[0x0; 8]; 8]; 384],
+            obj_data: Vec::<HashMap::<String, i8>>::new(),
+            obj_data_sorted: Vec::<HashMap::<String, i8>>::new(),
+            scanrow: [0x0; 160],
+            screen_buffer: [0x0; 144 * 160 * 4],
+
+
             mode: GPU_Mode::VBlank,
             mode_clock: 0,
-            line: 0,
+            curline: 0,
+            curscan: 0,
             scx: 0,
             scy: 0,
             winx: 0,
@@ -52,21 +66,22 @@ impl GPU {
             win_on: false,
             bg_on: false,
             obj_on: false,
+            
             obj_size: 0,
             scanline: 0,
-            screen_buffer: [0x0; 144 * 160 * 4],
+            
             raster: 0,
-            int_fired: false,
+            int_fired: 0,
             ints: 0,
         }
     }
 }
 
 impl GPU{
-    fn set_int_fired(&mut self, value: bool){
+    fn set_int_fired(&mut self, value: u8){
         self.int_fired = value;
     }
-    pub fn rb(&self, mut address: usize) -> u8{
+    pub fn rb(&mut self, mut address: usize) -> u8{
         address = address - 0xFF40;
         match address{
             0 => {
@@ -74,7 +89,8 @@ impl GPU{
             }
             1 => {
                 let intf = self.int_fired as u8;
-                return intf << 3 | if self.line==self.raster { 4 }else{ 0 } | self.mode as u8
+                self.int_fired = 0;
+                return intf << 3 | if self.curline==self.raster { 4 }else{ 0 } | self.mode as u8
             }
             2 => {
                 self.scy
@@ -83,7 +99,7 @@ impl GPU{
                 self.scx
             }
             4 => {
-                self.line
+                self.curline
             }
             5 => {
                 self.raster
@@ -97,8 +113,8 @@ impl GPU{
             _ => { self.reg[address] }
         }
     }
-    pub fn wb(&mut self, mut address: usize, value: u8){
-        address = address - 0xFF40;
+    pub fn wb(&mut self, mut address: usize, value: u8, locations: [u8; 160]){
+        address -= 0xFF40;
         self.reg[address] = value;
         match address{
             1 => {
@@ -111,6 +127,9 @@ impl GPU{
                 self.obj_on = if (value & 0x2) != 0 { true }else{ false };
                 self.bg_on = if (value & 0x1) != 0 { true } else { false };
             }
+            1 => {
+                self.ints = (value >> 3) & 15;
+            }
             2 => {
                 self.scy = value;
             }
@@ -119,6 +138,14 @@ impl GPU{
             }
             5 => {
                 self.raster = value;
+            }
+            6 => {
+                let mut v = 0;
+                for i in 0..160{
+                    v = locations[i];
+                    self.oam[i as usize] = v;
+                    self.update_oam(0xFE00 + i as u16, v);
+                }
             }
             7 => {
                 for i in 0..4{
@@ -157,7 +184,7 @@ impl GPU{
                 self.winy = value;
             }
             11 => {
-                self.winx = value - 7;
+                self.winx = value + 7;
             }
             _ => { 0; }
         }
@@ -169,6 +196,38 @@ impl GPU{
         self.bg_map_base = 0;
         self.bg_tile_base = 0;
         self.win_map_base = 0;
+        self.mode_clock = 0;
+        self.curline = 0;
+        self.curscan = 0;
+        self.scx = 0;
+        self.scy = 0;
+        self.winx = 0;
+        self.winy = 0;
+        self.ints = 0;
+        self.int_fired = 0;
+        self.raster = 0;
+
+        self.bg_on = false;
+        self.win_on = false;
+        self.lcd_on = false;
+        self.obj_on = false;
+
+
+        self.scanrow = [0x0; 160];
+        for i in 0..40{
+            self.obj_data[i].entry("y".to_string()).or_insert(-16);
+            self.obj_data[i].entry("x".to_string()).or_insert(-8);
+            self.obj_data[i].entry("tile".to_string()).or_insert(0);
+            self.obj_data[i].entry("palette".to_string()).or_insert(0);
+            self.obj_data[i].entry("yflip".to_string()).or_insert(0);
+            self.obj_data[i].entry("xflip".to_string()).or_insert(0);
+            self.obj_data[i].entry("prio".to_string()).or_insert(0);
+            self.obj_data[i].entry("num".to_string()).or_insert(i as i8);
+        }
+
+        self.bg_tile_base = 0x0000;
+        self.win_map_base = 0x1800;
+        self.bg_map_base = 0x1800;
     }
     pub fn update_tileset(&mut self, address: u16, value: u8){
         let address = address & 0x1FFE;
@@ -181,9 +240,33 @@ impl GPU{
             self.tileset[tile as usize][y as usize][x as usize] = (if self.vram[address as usize] & sx != 0 {1}else{0}) + (if self.vram[address as usize + 1] & sx != 0 {2}else{0});
         }
     }
+    pub fn update_oam(&mut self, mut address: u16, value: u8){
+        address -= 0xFE00;
+        let obj = address >> 2;
+        if obj < 40{
+            match address & 0x3{
+                0 => {self.obj_data[obj as usize].entry("y".to_string()).or_insert(value as i8 - 16);}
+                1 => {self.obj_data[obj as usize].entry("x".to_string()).or_insert(value as i8 - 8);}
+                2 => {
+                    if self.obj_size != 0{
+                        self.obj_data[obj as usize].entry("tile".to_string()).or_insert((address & 0xFE) as i8);
+                    }else{
+                        self.obj_data[obj as usize].entry("tile".to_string()).or_insert(value as i8);
+                    }
+                }
+                3 => {
+                    self.obj_data[obj as usize].entry("palette".to_string()).or_insert(if (value & 0x10) != 0 { 1 }else{ 0 });
+                    self.obj_data[obj as usize].entry("xflip".to_string()).or_insert(if (value & 0x20) != 0 { 1 }else{ 0 });
+                    self.obj_data[obj as usize].entry("yflip".to_string()).or_insert(if (value & 0x40) != 0 { 1 }else{ 0 });
+                    self.obj_data[obj as usize].entry("prio".to_string()).or_insert(if (value & 0x80) != 0 { 1 }else{ 0 });
+                }
+                _ => {}
+            }
+        }
+    }
 }
 impl GPU {
-    pub fn step(&mut self, t: u8){
+    pub fn step(&mut self, t: u8) -> u8{
         self.mode_clock += t as u16;
         match self.mode{
             GPU_Mode::OAM_Read => {
@@ -193,48 +276,102 @@ impl GPU {
                 }
             }
             GPU_Mode::VRAM_Read => {
-                if self.mode_clock >= 172{
+                if self.mode_clock >= 43{
                     self.mode_clock = 0;
                     self.mode = GPU_Mode::HBlank;
 
                     //Render scanline to video buffer here
                     self.render_scan();
+                    if (self.ints & 0x1) != 0 { self.int_fired |= 2; return 2}
+                    if self.lcd_on{
+                        if self.bg_on{
+                            let mut linebase = self.curscan;
+                            let mapbase = self.bg_map_base + ((((self.curline+self.scy)&255)<<3) >> 5) as u16;
+                            let y = (self.curline + self.scy) & 7;
+                            let mut x = self.scx & 7;
+                            let mut t = (self.scx >> 3) & 31;
+                            let pixel = 0;
+                            let mut w = 160;
+                            if self.bg_tile_base != 0{
+                                let mut tile = self.vram[(mapbase + t as u16) as usize];
+                                if tile< 128 { tile = tile.wrapping_add(128); tile = tile.wrapping_add(128); };
+                                let mut tile_row = self.tileset[tile as usize][y as usize];
+                                while w != 0{
+                                    self.scanrow[160 - x as usize] = tile_row[x as usize];
+                                    self.screen_buffer[linebase as usize + 3] = self.pal[0][tile_row[x as usize] as usize];
+                                    x += 1;
+                                    if x == 8{
+                                        t = (t + 1) & 31;
+                                        x = 0;
+                                        tile = self.vram[(mapbase + t as u16) as usize];
+                                        if tile< 128 { tile = tile.wrapping_add(128); tile = tile.wrapping_add(128); };
+                                        tile_row = self.tileset[tile as usize][y as usize];
+                                    }
+                                    linebase += 4;
+                                    w -= 1;
+
+                                }
+                            }else{
+                                let mut tile_row = self.tileset[self.vram[(mapbase + t as u16) as usize] as usize][y as usize];
+                                while w != 0{
+                                    self.scanrow[160 - x as usize] = tile_row[x as usize];
+                                    self.screen_buffer[linebase as usize + 3] = self.pal[0][tile_row[x as usize] as usize];
+                                    x += 1;
+                                    if x == 8{
+                                        t = (t + 1) & 31;
+                                        x = 0;
+                                        tile_row = self.tileset[self.vram[(mapbase + t as u16) as usize] as usize][y as usize];
+                                    }
+                                    linebase += 4;
+                                    w -= 1;
+                                }
+                            }
+                        }
+                    }
                 }
             }
             GPU_Mode::HBlank => {
                 if self.mode_clock >= 204{
                     self.mode_clock = 0;
-                    self.line += 1;
+                    self.curline += 1;
+                    self.curscan += 640;
                     if self.mode_clock == 143{
                         self.mode = GPU_Mode::VBlank;
                         //canvas put on screen
+                        if (self.ints & 0x2) != 0 { self.int_fired |= 2; return 2}
                     }else{
                         self.mode = GPU_Mode::OAM_Read;
+                    }
+                    if self.curline == self.raster{
+                        if (self.ints & 0x8) != 0 { self.int_fired |= 8; return 2}
                     }
                 }
             }
             GPU_Mode::VBlank => {
                 if self.mode_clock >= 456{
                     self.mode_clock = 0;
-                    self.line += 1;
-                    if self.line > 153{
+                    self.curline += 1;
+                    if self.curline > 153{
                         self.mode = GPU_Mode::OAM_Read;
-                        self.line = 0;
+                        self.curline = 0;
+                        self.curscan = 0;
                     }
+                    if (self.ints & 0x4) != 0 { self.int_fired |= 4; return 2}
                 }
             }
         }
+        0
     }
     pub fn render_scan(&mut self){
         let mut mapoffs : u16 = if self.bg_map_base == 1 {0x1C00}else{0x1800};
-        mapoffs += (((self.line + self.scy) as u16) & 255) >> 3;
+        mapoffs += (((self.curline + self.scy) as u16) & 255) >> 3;
         let mut lineoff = self.scx >> 3;
 
-        let y = (self.line + self.scy) & 7;
+        let y = (self.curline + self.scy) & 7;
 
         let mut x = self.scx & 7;
 
-        let mut canvasoff = self.line * 160 * 4;
+        let mut canvasoff = self.curline * 160 * 4;
 
         let mut color : [u8; 4] = [0x0; 4];
         let mut tile = self.vram[(mapoffs + lineoff as u16) as usize] as u16;
