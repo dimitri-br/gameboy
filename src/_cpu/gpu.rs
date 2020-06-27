@@ -5,7 +5,7 @@ pub struct GPU{
     pub vram: [u8; 0x2000],
     reg: [u8; 0x2000],
     oam: [u8; 0xFF],
-    pub screen: [u8; 144 * 160],
+
     pal: [[u8; 4]; 3],
     tileset: [[[u8; 8]; 8]; 384],
     mode: GPU_Mode,
@@ -42,7 +42,6 @@ impl GPU {
             vram: [0x0; 0x2000],
             reg: [0x0; 0x2000],
             oam: [0x0; 0xFF],
-            screen: [0x0; 144 * 160],
             pal: [[0x0; 4]; 3],
             tileset: [[[0x0; 8]; 8]; 384],
             obj_data: Vec::<HashMap::<String, i8>>::new(),
@@ -78,9 +77,7 @@ impl GPU {
 }
 
 impl GPU{
-    fn set_int_fired(&mut self, value: u8){
-        self.int_fired = value;
-    }
+
     pub fn rb(&mut self, mut address: usize) -> u8{
         address = address - 0xFF40;
         match address{
@@ -114,7 +111,7 @@ impl GPU{
         }
     }
     pub fn wb(&mut self, mut address: usize, value: u8, locations: [u8; 160]){
-        address -= 0xFF40;
+        let address = address - 0xFF40;
         self.reg[address] = value;
         match address{
             1 => {
@@ -230,7 +227,10 @@ impl GPU{
         self.bg_map_base = 0x1800;
     }
     pub fn update_tileset(&mut self, address: u16, value: u8){
-        let address = address & 0x1FFE;
+        let mut address = address;
+        if address & 1 != 0 { 
+            address -= 1;
+        }
         let tile = (address >> 4) & 511;
         let y = (address >> 1) & 7;
 
@@ -270,7 +270,7 @@ impl GPU {
         self.mode_clock += t as u16;
         match self.mode{
             GPU_Mode::OAM_Read => {
-                if self.mode_clock >= 80{
+                if self.mode_clock >= 20{
                     self.mode_clock = 0;
                     self.mode = GPU_Mode::VRAM_Read;
                 }
@@ -279,76 +279,36 @@ impl GPU {
                 if self.mode_clock >= 43{
                     self.mode_clock = 0;
                     self.mode = GPU_Mode::HBlank;
-
+                    
                     //Render scanline to video buffer here
-                    self.render_scan();
                     if (self.ints & 0x1) != 0 { self.int_fired |= 2; return 2}
-                    if self.lcd_on{
-                        if self.bg_on{
-                            let mut linebase = self.curscan;
-                            let mapbase = self.bg_map_base + ((((self.curline+self.scy)&255)<<3) >> 5) as u16;
-                            let y = (self.curline + self.scy) & 7;
-                            let mut x = self.scx & 7;
-                            let mut t = (self.scx >> 3) & 31;
-                            let pixel = 0;
-                            let mut w = 160;
-                            if self.bg_tile_base != 0{
-                                let mut tile = self.vram[(mapbase + t as u16) as usize];
-                                if tile< 128 { tile = tile.wrapping_add(128); tile = tile.wrapping_add(128); };
-                                let mut tile_row = self.tileset[tile as usize][y as usize];
-                                while w != 0{
-                                    self.scanrow[160 - x as usize] = tile_row[x as usize];
-                                    self.screen_buffer[linebase as usize + 3] = self.pal[0][tile_row[x as usize] as usize];
-                                    x += 1;
-                                    if x == 8{
-                                        t = (t + 1) & 31;
-                                        x = 0;
-                                        tile = self.vram[(mapbase + t as u16) as usize];
-                                        if tile< 128 { tile = tile.wrapping_add(128); tile = tile.wrapping_add(128); };
-                                        tile_row = self.tileset[tile as usize][y as usize];
-                                    }
-                                    linebase += 4;
-                                    w -= 1;
-
-                                }
-                            }else{
-                                let mut tile_row = self.tileset[self.vram[(mapbase + t as u16) as usize] as usize][y as usize];
-                                while w != 0{
-                                    self.scanrow[160 - x as usize] = tile_row[x as usize];
-                                    self.screen_buffer[linebase as usize + 3] = self.pal[0][tile_row[x as usize] as usize];
-                                    x += 1;
-                                    if x == 8{
-                                        t = (t + 1) & 31;
-                                        x = 0;
-                                        tile_row = self.tileset[self.vram[(mapbase + t as u16) as usize] as usize][y as usize];
-                                    }
-                                    linebase += 4;
-                                    w -= 1;
-                                }
-                            }
-                        }
-                    }
+                    self.render_scan();
+                    
+                    
                 }
             }
             GPU_Mode::HBlank => {
-                if self.mode_clock >= 204{
-                    self.mode_clock = 0;
-                    self.curline += 1;
-                    self.curscan += 640;
+                if self.mode_clock >= 51{
+                    
                     if self.mode_clock == 143{
                         self.mode = GPU_Mode::VBlank;
                         //canvas put on screen
                         if (self.ints & 0x2) != 0 { self.int_fired |= 2; return 2}
                     }else{
                         self.mode = GPU_Mode::OAM_Read;
+                        if (self.ints & 0x4) != 0 { self.int_fired |= 4; return 2}
                     }
+                    self.curline += 1;
                     if self.curline == self.raster{
                         if (self.ints & 0x8) != 0 { self.int_fired |= 8; return 2}
                     }
+                    self.mode_clock = 0;
+                    
+                    self.curscan += 640;
                 }
             }
             GPU_Mode::VBlank => {
-                if self.mode_clock >= 456{
+                if self.mode_clock >= 114{
                     self.mode_clock = 0;
                     self.curline += 1;
                     if self.curline > 153{
@@ -363,33 +323,67 @@ impl GPU {
         0
     }
     pub fn render_scan(&mut self){
-        let mut mapoffs : u16 = if self.bg_map_base == 1 {0x1C00}else{0x1800};
-        mapoffs += (((self.curline + self.scy) as u16) & 255) >> 3;
-        let mut lineoff = self.scx >> 3;
+        if self.lcd_on{
+            if self.bg_on{
+                let mut linebase = self.curscan;
+                let mapbase = self.bg_map_base + ((((self.curline+self.scy)&255)<<3) >> 5) as u16;
+                let y = (self.curline + self.scy) & 7;
+                let mut x = self.scx & 7;
+                let mut t = (self.scx >> 3) & 31;
+                let pixel = 0;
+                let mut w = 160;
+                if self.bg_tile_base != 0{
+                    let mut tile = self.vram[(mapbase + t as u16) as usize];
+                    if tile< 128 { tile = tile.wrapping_add(128); tile = tile.wrapping_add(128); };
+                    let mut tile_row = self.tileset[tile as usize][y as usize];
+                    while w != 0{
+                        self.scanrow[160 - x as usize] = tile_row[x as usize];
+                        self.screen_buffer[linebase as usize + 3] = self.pal[0][tile_row[x as usize] as usize];
+                        x += 1;
+                        if x == 8{
+                            t = (t + 1) & 31;
+                            x = 0;
+                            tile = self.vram[(mapbase + t as u16) as usize];
+                            if tile< 128 { tile = tile.wrapping_add(128); tile = tile.wrapping_add(128); };
+                            tile_row = self.tileset[tile as usize][y as usize];
+                        }
+                        linebase += 4;
+                        w -= 1;
 
-        let y = (self.curline + self.scy) & 7;
+                    }
+                }else{
+                    let mut tile_row = self.tileset[self.vram[(mapbase + t as u16) as usize] as usize][y as usize];
+                    while w != 0{
+                        self.scanrow[160 - x as usize] = tile_row[x as usize];
+                        self.screen_buffer[linebase as usize + 3] = self.pal[0][tile_row[x as usize] as usize];
+                        x += 1;
+                        if x == 8{
+                            t = (t + 1) & 31;
+                            x = 0;
+                            tile_row = self.tileset[self.vram[(mapbase + t as u16) as usize] as usize][y as usize];
+                        }
+                        linebase += 4;
+                        w -= 1;
+                    }
+                }
+                if self.obj_on{
+                    let mut count = 0;
+                    if self.obj_size != 0{
+                        for i in 0..40{
 
-        let mut x = self.scx & 7;
-
-        let mut canvasoff = self.curline * 160 * 4;
-
-        let mut color : [u8; 4] = [0x0; 4];
-        let mut tile = self.vram[(mapoffs + lineoff as u16) as usize] as u16;
-        if self.bg_tile_base == 1 && tile < 128 {tile += 256};
-        for i in 0..160{
-            color = self.pal[self.tileset[tile as usize][x as usize][y as usize] as usize];
-            self.screen_buffer[canvasoff as usize + 1] = color[0];
-            self.screen_buffer[canvasoff as usize + 2] = color[1];
-            self.screen_buffer[canvasoff as usize + 3] = color[2];
-            self.screen_buffer[canvasoff as usize + 4] = color[3];
-            canvasoff += 4;
-
-            x += 1;
-            if x == 8{
-                x = 0;
-                lineoff = (lineoff + 1) & 31;
-                tile = self.vram[(mapoffs + lineoff as u16) as usize] as u16;
-                if self.bg_tile_base == 1 && tile < 128 {tile += 256};
+                        }
+                    }else{
+                        let tile_row = 0;
+                        let mut obj = HashMap::<String, i8>::new();
+                        let pal = 0;
+                        let pixel = 0;
+                        let x = 0;
+                        let linebase = self.curscan;
+                        for i in 0..40{
+                            //obj = self.obj_data[i];
+                        }
+                    }
+                }
             }
         }
     }

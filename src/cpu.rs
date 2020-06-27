@@ -53,9 +53,9 @@ impl CPU {
         }
     }
     pub fn load_rom(&mut self){
-        let mut rom = ROM::new(String::from("./roms/boot.bin"));
+        let mut rom = ROM::new(String::from("./roms/01.gb"));
         rom.load();
-        let mut index = 0x100;
+        let mut index = 0x0;
         for line in rom.content.iter(){
             self.memory.wb(index, *line);
             index += 1;
@@ -93,6 +93,11 @@ impl CPU {
                     self.registers.pc += 1;
                     4
                 }
+                0x4 => {
+                    self.inc(Target::B);
+                    self.registers.pc += 1;
+                    4
+                }
                 0x5 => {
                     self.dec(Target::B);
                     self.registers.pc += 1;
@@ -105,7 +110,7 @@ impl CPU {
                 }
                 0x8 => {
                     self.memory.wb(v as u16, (self.registers.sp >> 8) as u8);
-                    self.memory.wb(((v + 1) as u16), (self.registers.sp & 0xFF) as u8);
+                    self.memory.wb((v + 1) as u16, (self.registers.sp & 0xFF) as u8);
                     self.registers.pc += 3;
                     20
                 }
@@ -134,6 +139,11 @@ impl CPU {
                     self.registers.pc += 1;
                     16
                 }
+                0x13 => {
+                    self.inc(Target::DE);
+                    self.registers.pc += 1;
+                    8
+                }
                 0x14 => {
                     self.inc(Target::D);
                     self.registers.pc += 1;
@@ -143,6 +153,11 @@ impl CPU {
                     self.rla();
                     self.registers.pc += 1;
                     4
+                }
+                0x19 => {
+                    self.add(Target::HL, self.registers.get_de().into());
+                    self.registers.pc += 1;
+                    8
                 }
                 0x1A => {
                     let val = self.memory.rb(self.registers.get_de()) as usize;
@@ -183,11 +198,28 @@ impl CPU {
                     self.registers.pc += 1;
                     8
                 }
+                0x28 => {
+                    self.registers.pc += 2;
+                    if self.registers.get_zero(){
+                        let new_val = v as i8;
+                        let pc = self.registers.pc as i16;
+                        let new_val = pc.wrapping_add(new_val as i16);
+                        self.registers.pc = new_val as u16;
+                        12
+                    }else{
+                        8
+                    }
+                }
                 0x2A => {
                     let val = self.memory.rb(self.registers.get_hl()) as usize;
                     self.ld(Target::A, val);
                     self.registers.set_hl(self.registers.get_hl().wrapping_add(1));
                     self.registers.pc += 1;
+                    8
+                }
+                0x2E => {
+                    self.ld(Target::L, v);
+                    self.registers.pc += 2;
                     8
                 }
                 0x31 => {
@@ -201,8 +233,22 @@ impl CPU {
                     self.registers.pc += 1;
                     8
                 }
+                0x34 => {
+                    let (new_value, did_overflow) = self.memory.rb(self.registers.get_hl()).overflowing_add(v as u8);
+                    self.registers.set_zero(new_value == 0);
+                    self.registers.set_sub(false);
+                    self.registers.set_half((self.memory.rb(self.registers.get_hl()) & 0xF).overflowing_add(v as u8 & 0xF).1);                
+                    self.memory.wb(self.registers.get_hl(),new_value);
+                    self.registers.pc += 1;
+                    12
+                }
                 0x3C => {
                     self.inc(Target::A);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x3D => {
+                    self.dec(Target::A);
                     self.registers.pc += 1;
                     4
                 }
@@ -226,6 +272,11 @@ impl CPU {
                     self.registers.pc += 1;
                     8
                 }
+                0x7B => {
+                    self.ld(Target::A, self.registers.e as usize);
+                    self.registers.pc += 1;
+                    4
+                }
                 0x88 => {
                     self.adc(Target::A, self.registers.b as usize);
                     self.registers.pc += 1;
@@ -242,8 +293,8 @@ impl CPU {
                     4
                 }
                 0xC1 => {
-                    self.registers.b = self.memory.rb(self.registers.sp.wrapping_add(2));
-                    self.registers.c = self.memory.rb(self.registers.sp.wrapping_add(1));
+                    self.registers.b = self.memory.rb(self.registers.sp.wrapping_add(1));
+                    self.registers.c = self.memory.rb(self.registers.sp);
                     self.registers.sp = self.registers.sp.wrapping_add(2);
                     self.registers.pc += 1;
                     16
@@ -317,10 +368,25 @@ impl CPU {
                     self.registers.pc += 1;
                     8
                 }
+                0xEA => {
+                    self.memory.wb(self.registers.get_hl(), self.registers.a);
+                    self.registers.pc += 3;
+                    16
+                }
+                0xF3 => {
+                    self.cpu_interrupt = false;
+                    self.registers.pc += 1;
+                    4
+                }
                 0xFB => {
                     self.cpu_interrupt = true;
                     self.registers.pc += 1;
                     4
+                }
+                0xFE => {
+                    self.cp(Target::A, v);
+                    self.registers.pc += 2;
+                    8
                 }
                 
                 _ => { panic!("Opcode: {:#x?}", opcode) }

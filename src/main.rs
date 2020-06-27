@@ -38,10 +38,14 @@ fn main(){
 
     let mut event_pump = sdl_context.event_pump().unwrap();
 
-
+    println!("Loaded screen!");
     let mut cpu = CPU::new();
     cpu.load_rom();
+    println!("Loaded ROM!");
+
     //cpu.memory.set_initial();
+    println!("Set initial!");
+
     let mut step = 0;
     println!("Debugging! \n\n");
     'running: loop{
@@ -80,7 +84,10 @@ fn main(){
                 
                 let pixel = cpu.memory.gpu.screen_buffer[x * y * 4];
                 canvas.set_draw_color(Color::RGB(pixel, pixel, pixel));
-                    
+                println!("{}",pixel);
+                if pixel != 0x0{
+                    panic!("Not black?");
+                }   
                 canvas.fill_rect(Rect::new((x * scale_x as usize) as i32, (y * scale_y as usize) as i32, scale_x, scale_y)).unwrap();
                 
             }
