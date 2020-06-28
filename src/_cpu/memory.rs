@@ -115,7 +115,7 @@ impl Memory{
             }
             0x1000..=0x7000 => {self.rom[address as usize]}
             0x8000..=0x9000 => {
-                self.gpu.rb((address & 0x1FFF) as usize)
+                self.gpu.vram[(address & 0x1FFF) as usize]
             }
             0xA000..=0xB000 => {
                 self.eram[(address & 0x1FFF) as usize]
@@ -129,11 +129,8 @@ impl Memory{
                         self.wram[(address & 0x1FFF) as usize]
                     }
                     0xE00 => {
-                        if address < 0xFEA0{
-                            self.gpu.rb((address & 0xFF) as usize)
-                        }else{
-                            0
-                        }
+                        if address & 0xFF < 0xA0 { self.gpu.oam[(address&0xFF) as usize] }else{ 0 }
+                        
                     }
                     0xF00 => {
                         if address >= 0xFF80{
@@ -141,6 +138,16 @@ impl Memory{
                         }else{
                             //io handling go here
                             match address & 0x00F0{
+                                0x0 => {
+                                    match address & 0x7{
+                                        15 => {
+                                            return self.interrupt_flags
+                                        }
+                                        _ => {
+                                            return 0
+                                        }
+                                    }
+                                }
                                 0x40..=0x70 => {
                                     return self.gpu.rb(address as usize)
                                 }
@@ -161,20 +168,15 @@ impl Memory{
         match address & 0xF000{
             0x0000 => {if self.in_bios{ if address < 0x100 {self.bios[address as usize] = value}else{self.rom[address as usize] = value;}}else{self.rom[address as usize] = value;}}
             0x1000..=0x7000 => {self.rom[address as usize] = value;}
-            0x8000..=0x9000 => {self.gpu.vram[(address & 0x1FFF) as usize] = value; self.gpu.update_tileset(address, value);}
-            0xA000..=0xB000 => {self.eram[address as usize] = value;}
-            0xC000..=0xE000 => {self.wram[address as usize] = value;}
+            0x8000..=0x9000 => {self.gpu.vram[(address & 0x1FFF) as usize] = value; self.gpu.update_tileset(address & 0x1FFF, value);}
+            0xA000..=0xB000 => {self.eram[(address & 0x1FFF) as usize] = value;}
+            0xC000..=0xE000 => {self.wram[(address & 0x1FFF) as usize] = value;}
             0xF000 => { match address & 0x0F00{
                 0x0..=0xD00 => {
                     self.wram[(address & 0x1FFF) as usize] = value;
                 }
                 0xE00 => {
-                    if address < 0xFEA0{
-                        let mut locations : [u8; 160] = [0x0; 160];
-                        self.gpu.wb((address & 0xFF) as usize, value, locations)
-                    }else{
-                        0;
-                    }
+                    if address & 0xFF < 0xA0 { self.gpu.oam[(address&0xFF) as usize] = value; }
                     self.gpu.update_oam(address, value);
                 }
                 0xF00 => {

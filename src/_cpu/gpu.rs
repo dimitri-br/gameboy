@@ -2,16 +2,16 @@ use std::collections::HashMap;
 use super::memory;
 
 pub struct GPU{
-    pub vram: [u8; 0x2000],
-    reg: [u8; 0x2000],
-    oam: [u8; 0xFF],
+    pub vram: [u8; 8192],
+    pub reg: [u8; 8192],
+    pub oam: [u8; 255],
 
     pal: [[u8; 4]; 3],
-    tileset: [[[u8; 8]; 8]; 384],
+    tileset: [[[u8; 8]; 8]; 512],
     mode: GPU_Mode,
     mode_clock: u16,
     curline: u8,
-    curscan: u16,
+    curscan: u32,
     scy: u8,
     scx: u8,
     winx: u8,
@@ -24,14 +24,15 @@ pub struct GPU{
     bg_on: bool,
     obj_on: bool,
     scanline: u8,
-    obj_data: Vec::<HashMap::<String, i8>>,
-    obj_data_sorted: Vec::<HashMap::<String, i8>>,
+    obj_data: Vec::<HashMap::<String, i16>>,
+    obj_data_sorted: Vec::<HashMap::<String, i16>>,
     scanrow: [u8; 160],
     obj_size: u8,
     int_fired: u8,
     raster: u8,
     ints: u8,
 
+    pub IF: u8,
     pub screen_buffer: [u8; 144 * 160 * 4],
 
 }
@@ -43,9 +44,9 @@ impl GPU {
             reg: [0x0; 0x2000],
             oam: [0x0; 0xFF],
             pal: [[0x0; 4]; 3],
-            tileset: [[[0x0; 8]; 8]; 384],
-            obj_data: Vec::<HashMap::<String, i8>>::new(),
-            obj_data_sorted: Vec::<HashMap::<String, i8>>::new(),
+            tileset: [[[0x0; 8]; 8]; 512],
+            obj_data: Vec::<HashMap::<String, i16>>::new(),
+            obj_data_sorted: Vec::<HashMap::<String, i16>>::new(),
             scanrow: [0x0; 160],
             screen_buffer: [0x0; 144 * 160 * 4],
 
@@ -72,6 +73,7 @@ impl GPU {
             raster: 0,
             int_fired: 0,
             ints: 0,
+            IF: 0,
         }
     }
 }
@@ -79,7 +81,7 @@ impl GPU {
 impl GPU{
 
     pub fn rb(&mut self, mut address: usize) -> u8{
-        address = address - 0xFF40;
+        address = address.wrapping_sub(0xFF40);
         match address{
             0 => {
                 return if self.lcd_on { 0x80 }else{ 0 } | if self.win_map_base==0x1C00 { 0x40 }else{ 0 } | if self.win_on { 0x20 }else{ 0 } | if self.bg_tile_base == 0x0000 { 0x10 }else{ 0 } | if self.bg_map_base == 0x1C00 { 0x8 } else{ 0 } | if self.obj_size != 0 { 0x4 }else{ 0 } | if self.obj_on { 0x2 }else{ 0 } | if self.bg_on { 0x1 }else { 0 }
@@ -189,7 +191,7 @@ impl GPU{
 }
 impl GPU{
     pub fn reset(&mut self){
-        self.tileset = [[[0x0; 8]; 8]; 384];
+        self.tileset = [[[0x0; 8]; 8]; 512];
         self.bg_map_base = 0;
         self.bg_tile_base = 0;
         self.win_map_base = 0;
@@ -219,7 +221,7 @@ impl GPU{
             self.obj_data[i].entry("yflip".to_string()).or_insert(0);
             self.obj_data[i].entry("xflip".to_string()).or_insert(0);
             self.obj_data[i].entry("prio".to_string()).or_insert(0);
-            self.obj_data[i].entry("num".to_string()).or_insert(i as i8);
+            self.obj_data[i].entry("num".to_string()).or_insert(i as i16);
         }
 
         self.bg_tile_base = 0x0000;
@@ -235,8 +237,10 @@ impl GPU{
         let y = (address >> 1) & 7;
 
         let mut sx = 0;
+
         for x in 0..8{
             sx = 1 << (7 - x);
+            
             self.tileset[tile as usize][y as usize][x as usize] = (if self.vram[address as usize] & sx != 0 {1}else{0}) + (if self.vram[address as usize + 1] & sx != 0 {2}else{0});
         }
     }
@@ -245,13 +249,13 @@ impl GPU{
         let obj = address >> 2;
         if obj < 40{
             match address & 0x3{
-                0 => {self.obj_data[obj as usize].entry("y".to_string()).or_insert(value as i8 - 16);}
-                1 => {self.obj_data[obj as usize].entry("x".to_string()).or_insert(value as i8 - 8);}
+                0 => {self.obj_data[obj as usize].entry("y".to_string()).or_insert(value as i16 - 16);}
+                1 => {self.obj_data[obj as usize].entry("x".to_string()).or_insert(value as i16- 8);}
                 2 => {
                     if self.obj_size != 0{
-                        self.obj_data[obj as usize].entry("tile".to_string()).or_insert((address & 0xFE) as i8);
+                        self.obj_data[obj as usize].entry("tile".to_string()).or_insert((address & 0xFE) as i16);
                     }else{
-                        self.obj_data[obj as usize].entry("tile".to_string()).or_insert(value as i8);
+                        self.obj_data[obj as usize].entry("tile".to_string()).or_insert(value as i16);
                     }
                 }
                 3 => {
@@ -263,6 +267,24 @@ impl GPU{
                 _ => {}
             }
         }
+        for i in 0..self.obj_data.len()-1{
+            if self.obj_data[i].get("x") > self.obj_data[i+1].get("x"){
+                for (key, value) in self.obj_data[i].iter(){
+                    self.obj_data_sorted[i].entry(key.to_string()).or_insert(*value);
+                }
+                for (key, value) in self.obj_data[i+1].iter(){
+                    self.obj_data_sorted[i+1].entry(key.to_string()).or_insert(*value);
+                }
+            }else{
+                for (key, value) in self.obj_data[i+1].iter(){
+                    self.obj_data_sorted[i].entry(key.to_string()).or_insert(*value);
+                }
+                for (key, value) in self.obj_data[i].iter(){
+                    self.obj_data_sorted[i+1].entry(key.to_string()).or_insert(*value);
+                }
+            }
+        }
+
     }
 }
 impl GPU {
@@ -281,7 +303,7 @@ impl GPU {
                     self.mode = GPU_Mode::HBlank;
                     
                     //Render scanline to video buffer here
-                    if (self.ints & 0x1) != 0 { self.int_fired |= 2; return 2}
+                    if (self.ints & 0x1) != 0 { self.int_fired |= 2; self.IF |= 2;}
                     self.render_scan();
                     
                     
@@ -293,18 +315,18 @@ impl GPU {
                     if self.mode_clock == 143{
                         self.mode = GPU_Mode::VBlank;
                         //canvas put on screen
-                        if (self.ints & 0x2) != 0 { self.int_fired |= 2; return 2}
+                        if (self.ints & 0x2) != 0 { self.int_fired |= 2; self.IF |= 2;}
                     }else{
                         self.mode = GPU_Mode::OAM_Read;
-                        if (self.ints & 0x4) != 0 { self.int_fired |= 4; return 2}
+                        if (self.ints & 0x4) != 0 { self.int_fired |= 4; self.IF |= 2;}
                     }
-                    self.curline += 1;
+                    self.curline = self.curline.wrapping_add(1);
                     if self.curline == self.raster{
-                        if (self.ints & 0x8) != 0 { self.int_fired |= 8; return 2}
+                        if (self.ints & 0x8) != 0 { self.int_fired |= 8; self.IF |= 2;}
                     }
                     self.mode_clock = 0;
                     
-                    self.curscan += 640;
+                    self.curscan = self.curscan.wrapping_add(640);
                 }
             }
             GPU_Mode::VBlank => {
@@ -316,7 +338,7 @@ impl GPU {
                         self.curline = 0;
                         self.curscan = 0;
                     }
-                    if (self.ints & 0x4) != 0 { self.int_fired |= 4; return 2}
+                    if (self.ints & 0x4) != 0 { self.int_fired |= 4; self.IF |= 2;}
                 }
             }
         }
@@ -373,14 +395,50 @@ impl GPU {
 
                         }
                     }else{
-                        let tile_row = 0;
+                        let mut tile_row = [0x0; 8];
                         let mut obj = HashMap::<String, i8>::new();
-                        let pal = 0;
+                        let mut pal = [0x0; 4];
                         let pixel = 0;
                         let x = 0;
-                        let linebase = self.curscan;
+                        let mut linebase = self.curscan;
                         for i in 0..40{
-                            //obj = self.obj_data[i];
+                            if *self.obj_data_sorted[i].get("y").unwrap() as u16 <= self.curline as u16 && *self.obj_data_sorted[i].get("y").unwrap() + 8 > self.curline as i16{ 
+                                if *self.obj_data_sorted[i].get("yflip").unwrap() != 0{
+                                    tile_row = self.tileset[*self.obj_data_sorted[i].get("tile").unwrap() as usize][7-*self.obj_data_sorted[i].get("y").unwrap() as usize];
+                                }else{
+                                    tile_row = self.tileset[*self.obj_data_sorted[i].get("tile").unwrap() as usize][*self.obj_data_sorted[i].get("y").unwrap() as usize];
+                                }
+                            
+                                if *self.obj_data_sorted[i].get("palette").unwrap() != 0{
+                                    pal = self.pal[2]
+                                }else{
+                                    pal = self.pal[1]
+                                }
+                                linebase = ((self.curline * 160 + *self.obj_data_sorted[i].get("x").unwrap() as u8) * 4) as u32;
+                                if *self.obj_data_sorted[i].get("xflip").unwrap() != 0{
+                                    for x in 0..8{
+                                        if *self.obj_data_sorted[i].get("x").unwrap() + x >= 0 && *self.obj_data_sorted[i].get("x").unwrap() + x < 160{
+                                            if tile_row[7 - x as usize] != 0 && (*self.obj_data_sorted[i].get("prio").unwrap() != 0 || !self.scanrow[x as usize] != 0){
+                                                self.screen_buffer[linebase as usize + 3] = pal[tile_row[x as usize] as usize];
+                                            }
+                                        }
+                                    }
+                                    linebase += 4;
+                                }else{
+                                    for x in 0..8{
+                                        if *self.obj_data_sorted[i].get("x").unwrap() + x >= 0 && *self.obj_data_sorted[i].get("x").unwrap() + x < 160{
+                                            if tile_row[x as usize] != 0 && (*self.obj_data_sorted[i].get("prio").unwrap() != 0 || !self.scanrow[x as usize] != 0){
+                                                self.screen_buffer[linebase as usize + 3] = pal[tile_row[x as usize] as usize];
+                                            }
+                                        }
+                                    }
+                                    linebase += 4;
+                                }
+                                count += 1;
+                                if count > 10{
+                                    break;
+                                }
+                            }
                         }
                     }
                 }

@@ -22,7 +22,7 @@ const WIDTH : u32 = 640;
 const HEIGHT : u32 = 320;
 
 fn main(){
-    let scale_x = (WIDTH / 160) as u32;
+    /*let scale_x = (WIDTH / 160) as u32;
     let scale_y = (HEIGHT / 144) as u32;
     //sdl and gfx
     let sdl_context = sdl2::init().unwrap();
@@ -36,9 +36,9 @@ fn main(){
  
     let mut canvas = window.into_canvas().build().unwrap();
 
-    let mut event_pump = sdl_context.event_pump().unwrap();
+    let mut event_pump = sdl_context.event_pump().unwrap(); */
 
-    println!("Loaded screen!");
+    //println!("Loaded screen!");
     let mut cpu = CPU::new();
     cpu.load_rom();
     println!("Loaded ROM!");
@@ -46,11 +46,11 @@ fn main(){
     //cpu.memory.set_initial();
     println!("Set initial!");
 
-    let mut step = 0;
+    let mut step : isize = 0;
     println!("Debugging! \n\n");
     'running: loop{
         
-        //clr screen
+       /* //clr screen
         canvas.set_draw_color(Color::RGB(0,0,0));
         canvas.clear();
         //events
@@ -69,34 +69,37 @@ fn main(){
                 _ => {}
             }
         }
-
+*/
         cpu.step();
         step += 1;
+
+
+
         if cpu.memory.rb(0xFF02) == 0x81{
             let c : char = cpu.memory.rb(0xFF01) as char;
-            println!("{}",c);
+            println!("Output: {}",c);
             cpu.memory.wb(0xFF02, 0x0);
             panic!("):");
         }
-        for x in 0..160{
+        if cpu.registers.pc >= 0x100{
+            break 'running;
+        }
+        /*for x in 0..160{
             for y in 0..144{
                 
                 
                 let pixel = cpu.memory.gpu.screen_buffer[x * y * 4];
                 canvas.set_draw_color(Color::RGB(pixel, pixel, pixel));
-                println!("{}",pixel);
-                if pixel != 0x0{
-                    panic!("Not black?");
-                }   
+                 
                 canvas.fill_rect(Rect::new((x * scale_x as usize) as i32, (y * scale_y as usize) as i32, scale_x, scale_y)).unwrap();
                 
             }
             
-        }
-        canvas.present();
-        /*print!("\n\nPress any key to continue...");
-        stdout().flush();
-        stdin().read(&mut [0x0]).unwrap();*/
+        }*/
+        //canvas.present();
+        //let _ = stdin().read(&mut [0u8]).unwrap();
+        //sleep_ms(750);
     }
+    println!("Finished!");
     
 }

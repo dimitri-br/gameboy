@@ -34,7 +34,7 @@ impl Registers{
             e: 0,
             h: 0,
             l: 0,
-            pc: 0x100, 
+            pc: 0x0, 
             sp: 0,
         }
     }
@@ -64,7 +64,7 @@ impl Registers{
     /// 
     /// function will set BC to value, type `u16`
     pub fn set_af(&mut self, value: u16){
-        self.a = (value & 0xFF00) as u8;
+        self.a = ((value & 0xFF00) >> 8) as u8;
         let new_val = value & 0x00F0;
         if new_val & 0x8 == 1{
             self.f.zero = true;
@@ -99,8 +99,8 @@ impl Registers{
     /// 
     /// function will set BC to value, type `u16`
     pub fn set_bc(&mut self, value: u16){
-        self.b = (value & 0xFF00) as u8;
-        self.c = (value & 0x00FF) as u8;
+        self.b = ((value & 0xFF00) >> 8) as u8;
+        self.c = (value & 0xFF) as u8;
     }
 
     /// # get_de
@@ -114,23 +114,23 @@ impl Registers{
     /// 
     /// function will set DE to value, type `u16`
     pub fn set_de(&mut self, value: u16){
-        self.d = (value & 0xFF00) as u8;
-        self.e = (value & 0x00FF) as u8;
+        self.d = ((value & 0xFF00) >> 8) as u8;
+        self.e = (value & 0xFF) as u8;
     }
 
     /// # get_hl
     /// 
     /// function will get HL, return type `u16`
     pub fn get_hl(&self) -> u16{
-        (self.b as u16) << 8  | self.c as u16
+        (self.h as u16) << 8 | self.l as u16
     }
 
     /// # set_hl
     /// 
     /// function will set HL to value, type `u16`
     pub fn set_hl(&mut self, value: u16){
-        self.h = (value & 0xFF00) as u8;
-        self.l = (value & 0x00FF) as u8;
+        self.h = ((value & 0xFF00) >> 8) as u8;
+        self.l = (value & 0xFF) as u8;
     }
 
     /// # set_flag
