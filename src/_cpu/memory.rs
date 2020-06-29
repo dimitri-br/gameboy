@@ -41,6 +41,7 @@ pub struct Memory{
     eram: [u8; 0x2000], //external ram (On cartridge)
     zram: [u8; 0x80], //zero ram (everything 0xFF80 +)
 
+    ramoffs: u16,
     pub interrupt_flags: u8,
 }
 
@@ -54,6 +55,8 @@ impl Memory{
             wram: [0x0; 0x2000],
             eram: [0x0; 0x2000],
             zram: [0x0; 0x80],
+
+            ramoffs: 0,
 
             interrupt_flags: 0,
         }
@@ -104,6 +107,8 @@ impl Memory{
                         self.bios[address as usize]
                     }
                     else if address >= 0x100{
+                        
+                        self.in_bios = false;
                         self.rom[address as usize]
                     }
                     else{
@@ -115,10 +120,10 @@ impl Memory{
             }
             0x1000..=0x7000 => {self.rom[address as usize]}
             0x8000..=0x9000 => {
-                self.gpu.vram[(address & 0x1FFF) as usize]
+                self.gpu.rb(address)
             }
             0xA000..=0xB000 => {
-                self.eram[(address & 0x1FFF) as usize]
+                self.eram[(self.ramoffs + (address & 0x1FFF)) as usize]
             }
             0xC000..=0xE000 => {
                 self.wram[(address & 0x1FFF) as usize]
@@ -129,7 +134,7 @@ impl Memory{
                         self.wram[(address & 0x1FFF) as usize]
                     }
                     0xE00 => {
-                        if address & 0xFF < 0xA0 { self.gpu.oam[(address&0xFF) as usize] }else{ 0 }
+                        if address & 0xFF < 0xA0 { self.gpu.rb(address) }else{ 0 }
                         
                     }
                     0xF00 => {
@@ -149,7 +154,7 @@ impl Memory{
                                     }
                                 }
                                 0x40..=0x70 => {
-                                    return self.gpu.rb(address as usize)
+                                    return self.gpu.rb(address)
                                 }
                                 _ => { return 0 }
                             }
@@ -166,18 +171,18 @@ impl Memory{
        // println!("{:#x?}",address);
         //TODO - Add memory map
         match address & 0xF000{
-            0x0000 => {if self.in_bios{ if address < 0x100 {self.bios[address as usize] = value}else{self.rom[address as usize] = value;}}else{self.rom[address as usize] = value;}}
+            0x0000 => {if self.in_bios{ if address < 0x100 {self.bios[address as usize] = value}else{self.rom[address as usize] = value;}}}
             0x1000..=0x7000 => {self.rom[address as usize] = value;}
-            0x8000..=0x9000 => {self.gpu.vram[(address & 0x1FFF) as usize] = value; self.gpu.update_tileset(address & 0x1FFF, value);}
-            0xA000..=0xB000 => {self.eram[(address & 0x1FFF) as usize] = value;}
+            0x8000..=0x9000 => {self.gpu.wb(address, value);}
+            0xA000..=0xB000 => {self.eram[(self.ramoffs + (address & 0x1FFF)) as usize] = value;}
             0xC000..=0xE000 => {self.wram[(address & 0x1FFF) as usize] = value;}
             0xF000 => { match address & 0x0F00{
                 0x0..=0xD00 => {
                     self.wram[(address & 0x1FFF) as usize] = value;
                 }
                 0xE00 => {
-                    if address & 0xFF < 0xA0 { self.gpu.oam[(address&0xFF) as usize] = value; }
-                    self.gpu.update_oam(address, value);
+
+                    self.gpu.wb(address, value);
                 }
                 0xF00 => {
                     if address >= 0xFF80{
@@ -186,11 +191,8 @@ impl Memory{
                         //io handling go here
                         match address & 0x00F0{
                             0x40..=0x70 => {
-                                let mut locations : [u8; 160] = [0x0; 160];
-                                for i in 0..160{
-                                    locations[i] = self.rb(((value as u16) << 8) + i as u16);
-                                }
-                                self.gpu.wb(address as usize, value, locations);
+                                
+                                self.gpu.wb(address, value);
                             }
                             _ => { 0; }
                         };

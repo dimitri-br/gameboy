@@ -34,7 +34,7 @@ impl Registers{
             e: 0,
             h: 0,
             l: 0,
-            pc: 0x0, 
+            pc: 0x100, 
             sp: 0,
         }
     }
@@ -60,28 +60,70 @@ impl Registers{
         (self.a as u16) << 8  | f as u16
     }
 
+    pub fn get_f(&mut self) -> u8{
+        let mut f = 0;
+        if self.get_carry(){
+            f |= 0x10;
+        }
+        if self.get_zero(){
+            f |= 0x80;
+        }
+        if self.get_half(){
+            f |= 0x20;
+        }
+        if self.get_sub(){
+            f |= 0x40;
+        }
+        f
+    }
+    pub fn set_f(&mut self, value: u8){
+        let new_val = value & 0xF0;
+        println!("{}",new_val);
+        if new_val & 0x80 == 0x80{
+            self.f.zero = true;
+        }else{
+            self.f.zero = false;
+        }
+        if new_val & 0x40 == 0x40{
+            self.f.sub = true;
+        }else{
+            self.f.sub = false;
+        }
+        if new_val & 0x20 == 0x20{
+            self.f.half = true;
+        }else{
+            self.f.half = false;
+        }
+        if new_val & 0x10 == 0x10{
+            self.f.carry = true;
+        }else{
+            self.f.carry = false;
+        }
+
+    }
+
     /// # set_af
     /// 
     /// function will set BC to value, type `u16`
     pub fn set_af(&mut self, value: u16){
         self.a = ((value & 0xFF00) >> 8) as u8;
-        let new_val = value & 0x00F0;
-        if new_val & 0x8 == 1{
+        let new_val = value & 0xF0;
+        if new_val & 0x80 == 0x80{
             self.f.zero = true;
         }else{
             self.f.zero = false;
         }
-        if new_val & 0x4 == 1{
+        if new_val & 0x40 == 0x40{
             self.f.sub = true;
         }else{
             self.f.sub = false;
         }
-        if new_val & 0x2 == 1{
+        if new_val & 0x20 == 0x20{
             self.f.half = true;
         }else{
             self.f.half = false;
         }
-        if new_val & 0x1 == 1{
+        if new_val & 0x10 == 0x10{
             self.f.carry = true;
         }else{
             self.f.carry = false;
