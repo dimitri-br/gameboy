@@ -21,7 +21,7 @@ const WIDTH : u32 = 320;
 const HEIGHT : u32 = 144*2;
 
 fn main(){
-    
+
     let scale_x = (WIDTH / 160) as u32;
     let scale_y = (HEIGHT / 144) as u32;
     //sdl and gfx
