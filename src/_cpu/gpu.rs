@@ -299,7 +299,7 @@ impl GPU {
                 }
                 if self.csprit_inc { self.csprit_ind = (self.csprit_ind + 1) & 0x3F; };
             },
-            _ => panic!("GPU does not handle write {:04X}", address),
+            _ => {},
         }
     }
 }

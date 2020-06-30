@@ -18,10 +18,10 @@ pub struct Registers{
 
 }
 pub struct Flags{
-    zero: bool,
-    sub: bool,
-    half: bool,
-    carry: bool
+    pub zero: bool,
+    pub sub: bool,
+    pub half: bool,
+    pub carry: bool
 }
 impl Registers{
     pub fn new() -> Self{
@@ -78,7 +78,7 @@ impl Registers{
     }
     pub fn set_f(&mut self, value: u8){
         let new_val = value & 0xF0;
-        println!("{}",new_val);
+
         if new_val & 0x80 == 0x80{
             self.f.zero = true;
         }else{

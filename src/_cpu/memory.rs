@@ -142,7 +142,7 @@ impl Memory{
                             self.zram[(address & 0x7F)as usize]
                         }else{
                             //io handling go here
-                            match address & 0x00F0{
+                            match address & 0x00FF{
                                 0x0 => {
                                     match address & 0x7{
                                         15 => {
@@ -153,9 +153,15 @@ impl Memory{
                                         }
                                     }
                                 }
-                                0x40..=0x70 => {
+                                0x40..=0x4F => {
+                                
                                     return self.gpu.rb(address)
                                 }
+                                0x68..=0x6B => {
+                                    
+                                    return self.gpu.rb(address)
+                                }
+
                                 _ => { return 0 }
                             }
                             0
@@ -189,8 +195,15 @@ impl Memory{
                         self.zram[(address & 0x7F)as usize] = value;
                     }else{
                         //io handling go here
-                        match address & 0x00F0{
-                            0x40..=0x70 => {
+                        match address & 0x00FF{
+                            0x46 => {
+                                self.oamdma(value);
+                            }
+                            0x40..=0x4F => {
+                                
+                                self.gpu.wb(address, value);
+                            }
+                            0x68..=0x6B => {
                                 
                                 self.gpu.wb(address, value);
                             }
@@ -207,7 +220,13 @@ impl Memory{
 }
 
            
-        
+    fn oamdma(&mut self, value: u8) {
+    let base = (value as u16) << 8;
+    for i in 0 .. 0xA0 {
+        let b = self.rb(base + i);
+        self.wb(0xFE00 + i, b);
+    }
+    }       
     pub fn set_bios(&mut self, value: bool){
         self.in_bios = value;
     }
