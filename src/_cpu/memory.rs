@@ -94,9 +94,6 @@ impl Memory{
         self.wb(0xFF4A, 0);
         self.wb(0xFF4B, 0);
     }
-    pub fn check_gpu(&mut self){
-        
-    }
 
     pub fn rb(&mut self, address: u16) -> u8{
         //TODO - Add memory map

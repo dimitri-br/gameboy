@@ -382,7 +382,8 @@ impl CPU {
                     let (new_value, _did_overflow) = val.overflowing_add(1 as u8);
                     self.registers.set_zero(new_value == 0);
                     self.registers.set_sub(false);
-                    self.registers.set_half((val & 0xF).overflowing_add((1 as u8) & 0xF).1);                
+                    self.registers.set_half((val & 0xF) + ((1 as u8) & 0xF) > 0xF);
+               
                     self.memory.wb(self.registers.get_hl(),new_value);
                     self.registers.pc += 1;
                     12
@@ -392,7 +393,7 @@ impl CPU {
                     let new_val = val.wrapping_sub(1);
                     self.registers.set_zero(new_val == 0);
                     self.registers.set_sub(true);
-                    self.registers.set_half((val & 0xF).overflowing_sub(1 & 0xF).1);
+                    self.registers.set_half(((val as i16) & 0xF) - ((1 as i16) & 0xF) < 0x0);
                     self.memory.wb(self.registers.get_hl(), new_val);
                     self.registers.pc += 1;
                     12
@@ -490,9 +491,6 @@ impl CPU {
                 0x5F => {
                     self.ld(Target::E, self.registers.a as usize);
                     self.registers.pc += 1;
-                    if self.registers.get_de() == 0x0{
-                        println!("e: {:#x?}, {}", self.memory.rb(self.registers.pc), self.registers.e);
-                    }
                     4
                 }
                 0x62 => {
@@ -915,8 +913,8 @@ impl CPU {
 
                     self.registers.set_zero(false);
                     self.registers.set_sub(false);
-                    self.registers.set_carry(overflow);
-                    self.registers.set_half((new_val & 0xF).overflowing_add(new_v & 0xF).1);
+                    self.registers.set_carry((new_val & 0xFF) + (new_v & 0xFF) > 0xFF);
+                    self.registers.set_half((new_val & 0xF) + (new_v & 0xF) > 0xF);
 
                     self.registers.pc += 2;
                     12
@@ -1015,7 +1013,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.a & 0xF).overflowing_add((value & 0xF) as u8).1);
+                self.registers.set_half((self.registers.a & 0xF) + ((value as u8) & 0xF) > 0xF);
                 
                 self.registers.a = new_value;
             }
@@ -1025,8 +1023,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.b & 0xF).overflowing_add((value & 0xF) as u8).1);
-                
+                self.registers.set_half((self.registers.b & 0xF) + ((value as u8) & 0xF) > 0xF);                
                 self.registers.b = new_value;
             }
             Target::C => {
@@ -1035,8 +1032,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.c & 0xF).overflowing_add((value & 0xF) as u8).1);
-                
+                self.registers.set_half((self.registers.c & 0xF) + ((value as u8) & 0xF) > 0xF);                
                 self.registers.c = new_value;
             }
             Target::D => {
@@ -1045,8 +1041,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.d & 0xF).overflowing_add((value & 0xF) as u8).1);
-                
+                self.registers.set_half((self.registers.d & 0xF) + ((value as u8) & 0xF) > 0xF);                
                 self.registers.d = new_value;
             }
             Target::E => {
@@ -1055,8 +1050,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.e & 0xF).overflowing_add((value & 0xF) as u8).1);
-                
+                self.registers.set_half((self.registers.e & 0xF) + ((value as u8) & 0xF) > 0xF);                
                 self.registers.e = new_value;
             }
             Target::H => {
@@ -1065,8 +1059,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.h & 0xF).overflowing_add((value & 0xF) as u8).1);
-                
+                self.registers.set_half((self.registers.h & 0xF) + ((value as u8) & 0xF) > 0xF);                
                 self.registers.h = new_value;
             }
             Target::L => {
@@ -1075,8 +1068,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.l & 0xF).overflowing_add((value & 0xF) as u8).1);
-                
+                self.registers.set_half((self.registers.l & 0xF) + ((value as u8) & 0xF) > 0xF);                
                 self.registers.l = new_value;
             }
             Target::SP => {
@@ -1084,8 +1076,7 @@ impl CPU {
 
                 self.registers.set_zero(false);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.sp & 0xFFF).overflowing_add((value & 0xFFF) as u16).1);
-                self.registers.set_carry(did_overflow);
+                self.registers.set_half((self.registers.sp & 0xFFF) + ((value as u16) & 0xFFF) > 0xFFF);                self.registers.set_carry(did_overflow);
                 
                 self.registers.sp = new_value;
             }
@@ -1094,7 +1085,7 @@ impl CPU {
 
                 
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.get_hl() & 0xFFF).overflowing_add(value as u16 & 0xFFF).1);
+                self.registers.set_half((self.registers.get_hl() & 0xFFF) + (value as u16 & 0xFFF) > 0xFFF);
                 self.registers.set_carry(did_overflow);
 
                 self.registers.set_hl(new_value);
@@ -1105,7 +1096,7 @@ impl CPU {
 
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.get_de() & 0xFFF).overflowing_add(value as u16 & 0xFFF).1);
+                self.registers.set_half((self.registers.get_de() & 0xFFF) + (value as u16 & 0xFFF) > 0xFFF);
                 
                 self.registers.set_de(new_value);
             }
@@ -1115,7 +1106,7 @@ impl CPU {
 
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.get_bc() & 0xFFF).overflowing_add(value as u16 & 0xFFF).1);
+                self.registers.set_half((self.registers.get_bc() & 0xFFF) + (value as u16 & 0xFFF) > 0xFFF);
                 
                 self.registers.set_bc(new_value);
             }
@@ -1131,7 +1122,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(true);
-                self.registers.set_half((self.registers.a & 0xF).overflowing_sub((value & 0xF) as u8).1);
+                self.registers.set_half(((self.registers.a as i8) & 0xF) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.a = new_value;
             }
@@ -1141,7 +1132,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(true);
-                self.registers.set_half((self.registers.b & 0xF).overflowing_sub((value & 0xF) as u8).1);
+                self.registers.set_half(((self.registers.b as i8) & 0xF) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.b = new_value;
             }
@@ -1151,7 +1142,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(true);
-                self.registers.set_half((self.registers.c & 0xF).overflowing_sub((value & 0xF) as u8).1);
+                self.registers.set_half(((self.registers.c as i8) & 0xF) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.c = new_value;
             }
@@ -1161,7 +1152,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(true);
-                self.registers.set_half((self.registers.d & 0xF).overflowing_sub((value & 0xF) as u8).1);
+                self.registers.set_half(((self.registers.d as i8) & 0xF) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.d = new_value;
             }
@@ -1171,7 +1162,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(true);
-                self.registers.set_half((self.registers.e & 0xF).overflowing_sub((value & 0xF) as u8).1);
+                self.registers.set_half(((self.registers.e as i8) & 0xF) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.e = new_value;
             }
@@ -1181,7 +1172,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(true);
-                self.registers.set_half((self.registers.h & 0xF).overflowing_sub((value & 0xF) as u8).1);
+                self.registers.set_half(((self.registers.h as i8) & 0xF) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.h = new_value;
             }
@@ -1191,7 +1182,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(true);
-                self.registers.set_half((self.registers.l & 0xF).overflowing_sub((value & 0xF) as u8).1);
+                self.registers.set_half(((self.registers.l as i8) & 0xF) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.l = new_value;
             }
@@ -1208,7 +1199,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.a & 0xF).overflowing_add(((value + if self.registers.get_carry() { 1 } else { 0 }) as u8) & 0xF).1);
+                self.registers.set_half((self.registers.a & 0xF) + (((value as u8) + if self.registers.get_carry() { 1 } else { 0 }) & 0xF) > 0xF);
                 
                 self.registers.a = new_value;
             }
@@ -1272,7 +1263,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(true);
-                self.registers.set_half((self.registers.a & 0xF).overflowing_sub(value as u8 & 0xF).1);
+                self.registers.set_half(((self.registers.a as i8) & 0xF) - ((value & 0xF) as i8) < 0);
 
             }
             
@@ -1287,7 +1278,7 @@ impl CPU {
 
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.a & 0xF).overflowing_add(value as u8 & 0xF).1);
+                self.registers.set_half((self.registers.a & 0xF) + ((value as u8) & 0xF) > 0xF);
                 
                 self.registers.a = new_value;
             }
@@ -1296,7 +1287,7 @@ impl CPU {
 
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.b & 0xF).overflowing_add(value as u8 & 0xF).1);    
+                self.registers.set_half((self.registers.b & 0xF) + ((value as u8) & 0xF) > 0xF);
 
                 self.registers.b = new_value;
             }
@@ -1305,7 +1296,7 @@ impl CPU {
 
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.c & 0xF).overflowing_add(value as u8 & 0xF).1);   
+                self.registers.set_half((self.registers.c & 0xF) + ((value as u8) & 0xF) > 0xF);
 
                 self.registers.c = new_value;
             }
@@ -1314,7 +1305,7 @@ impl CPU {
 
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.d & 0xF).overflowing_add(value as u8 & 0xF).1);    
+                self.registers.set_half((self.registers.d & 0xF) + ((value as u8) & 0xF) > 0xF);
 
                 self.registers.d = new_value;
             }
@@ -1323,7 +1314,7 @@ impl CPU {
 
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.e & 0xF).overflowing_add(value as u8 & 0xF).1);    
+                self.registers.set_half((self.registers.e & 0xF) + ((value as u8) & 0xF) > 0xF);
 
                 self.registers.e = new_value;
             }
@@ -1332,7 +1323,7 @@ impl CPU {
 
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.h & 0xF).overflowing_add(value as u8 & 0xF).1);                
+                self.registers.set_half((self.registers.h & 0xF) + ((value as u8) & 0xF) > 0xF);
                 self.registers.h = new_value;
             }
             Target::L => {
@@ -1340,7 +1331,7 @@ impl CPU {
 
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.l & 0xF).overflowing_add(value as u8 & 0xF).1);                
+                self.registers.set_half((self.registers.l & 0xF) + ((value as u8) & 0xF) > 0xF);
                 self.registers.l = new_value;
             }
             Target::SP => {
@@ -1379,7 +1370,7 @@ impl CPU {
 
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_sub(true);
-                self.registers.set_half((self.registers.a & 0xF).overflowing_sub(value as u8 & 0xF).1);
+                self.registers.set_half(((self.registers.a as i8) & 0xF) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.a = new_value;
             }
@@ -1388,7 +1379,7 @@ impl CPU {
 
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_sub(true);
-                self.registers.set_half((self.registers.b & 0xF).overflowing_sub(value as u8 & 0xF).1);
+                self.registers.set_half(((self.registers.b as i8) & 0xF) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.b = new_value;
             }
@@ -1397,7 +1388,7 @@ impl CPU {
 
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_sub(true);
-                self.registers.set_half((self.registers.c & 0xF).overflowing_sub(value as u8 & 0xF).1);
+                self.registers.set_half(((self.registers.c as i8) & 0xF) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.c = new_value;
             }
@@ -1406,7 +1397,7 @@ impl CPU {
 
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_sub(true);
-                self.registers.set_half((self.registers.d & 0xF).overflowing_sub(value as u8 & 0xF).1);
+                self.registers.set_half(((self.registers.d as i8) & 0xF) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.d = new_value;
             }
@@ -1415,7 +1406,7 @@ impl CPU {
 
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_sub(true);
-                self.registers.set_half((self.registers.e & 0xF).overflowing_sub(value as u8 & 0xF).1);
+                self.registers.set_half(((self.registers.e as i8) & 0xF) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.e = new_value;
             }
@@ -1424,7 +1415,7 @@ impl CPU {
 
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_sub(true);
-                self.registers.set_half((self.registers.h & 0xF).overflowing_sub(value as u8 & 0xF).1);
+                self.registers.set_half(((self.registers.h as i8) & 0xF) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.h = new_value;
             }
@@ -1433,7 +1424,7 @@ impl CPU {
 
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_sub(true);
-                self.registers.set_half((self.registers.h & 0xF).overflowing_sub(value as u8 & 0xF).1);
+                self.registers.set_half(((self.registers.l as i8) & 0xF) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.l = new_value;
             }
