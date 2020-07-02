@@ -42,6 +42,8 @@ pub struct CPU{
     pub cpu_interrupt: bool,
     pub delay: u32,
     pub pause: bool,
+    pub debug: bool,
+    pub trace: Vec::<String>,
 }
 
 
@@ -54,6 +56,8 @@ impl CPU {
             cpu_interrupt: true,
             delay: 4,
             pause: false,
+            debug: false,
+            trace: Vec::<String>::new(),
         }
     }
     pub fn load_rom(&mut self){
@@ -72,6 +76,7 @@ impl CPU {
     pub fn step(&mut self){
         let max_update = 69905;
         self.delay = 0;
+        self.trace = Vec::<String>::new();
         while self.delay < max_update{
             let clockspeed = 4194304;
         
@@ -91,11 +96,16 @@ impl CPU {
                 v = (a << 8) + b;
 
             }
+            let af = self.registers.get_af();
+            let f = self.registers.get_f();
             //println!("DEBUG:\nOpcode: {:#x?}\nPC: {:#x?}\nSP: {:#x?}\nA: {:#x?}\nC: {:#x?}\nHL: {:#x?}\nV: {:#x?}\nZ: {}\nCarry: {}",opcode, self.registers.pc, self.registers.sp, self.registers.a, self.registers.c, self.registers.get_hl(), v, self.registers.get_zero(), self.registers.get_carry());
-            //println!("PC: {:#x?} - Opcode: {:#x?}", self.registers.pc, opcode);
-            self.delay += self.execute(opcode, v) as u32;
             
+
+            self.delay += self.execute(opcode, v) as u32;
+
             self.memory.gpu.do_cycle(self.delay);
+            self.trace.push(format!("PC: {:#x?} - SP: {:#x?} - Opcode: {:#x?} - AF: {:#x?} - BC: {:#x?} - DE: {:#x?} - HL: {:#x?} - F: {:#x?}\n", self.registers.pc, self.registers.sp, opcode, af, self.registers.get_bc(), self.registers.get_de(), self.registers.get_hl(), f));
+
         }
         
         
@@ -208,6 +218,10 @@ impl CPU {
                     4
                 }
                 0x11 => {
+                    if v == 0x0{
+                        self.debug = true;
+                        println!("START OF TEST 6\n\n\n");
+                    }
                     self.ld(Target::DE, v);
                     self.registers.pc += 3;
                     12
@@ -1638,6 +1652,10 @@ impl CPU{
                 self.srl(Target::B);
                 8
             }
+            0x3F => {
+                self.srl(Target::A);
+                8
+            }
             0x7C => {
                 self.bit(Target::H, 7);
                 8
@@ -1846,12 +1864,12 @@ impl CPU {
         
         match target{
             Target::A => {
-                let (new_value, did_overflow) = self.registers.a.overflowing_add(value as u8 + if self.registers.get_carry() { 1 } else { 0 });
-
+                let (mut new_value, did_overflow) = self.registers.a.overflowing_add(value as u8);
+                new_value += if self.registers.get_carry() { 1 } else { 0 };
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.a & 0xF) + (((value as u8) + if self.registers.get_carry() { 1 } else { 0 }) & 0xF) > 0xF);
+                self.registers.set_half((self.registers.a & 0xF) + (((value as u8) & 0xF) + if self.registers.get_carry() { 1 } else { 0 }) > 0xF);
                 
                 self.registers.a = new_value;
             }
@@ -1863,12 +1881,12 @@ impl CPU {
         
         match target{
             Target::A => {
-                let (new_value, did_overflow) = self.registers.a.overflowing_sub(value as u8 + if self.registers.get_carry() { 1 } else { 0 });
-
+                let (mut new_value, did_overflow) = self.registers.a.overflowing_sub(value as u8);
+                new_value += if self.registers.get_carry() { 1 } else { 0 };
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(true);
-                self.registers.set_half(((self.registers.a as i8) & 0xF) - (((value + if self.registers.get_carry() { 1 } else { 0 }) & 0xF) as i8) < 0);
+                self.registers.set_half(((self.registers.a as i8) & 0xF) - (((value & 0xF) + if self.registers.get_carry() { 1 } else { 0 }) as i8) < 0);
                 
                 self.registers.a = new_value;
             }

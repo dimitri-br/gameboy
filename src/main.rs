@@ -21,6 +21,7 @@ const WIDTH : u32 = 320;
 const HEIGHT : u32 = 144*2;
 
 fn main(){
+    let mut trace_buffer = Vec::<String>::new();
     let scale_x = (WIDTH / 160) as u32;
     let scale_y = (HEIGHT / 144) as u32;
     //sdl and gfx
@@ -43,7 +44,7 @@ fn main(){
     cpu.load_rom();
     println!("Loaded ROM!");
 
-    //cpu.memory.set_initial();
+    cpu.memory.set_initial();
 
     println!("Set initial!");
 
@@ -76,6 +77,11 @@ fn main(){
         }else{
             println!("Halt!");
         }
+        for trace in cpu.trace.iter(){
+            trace_buffer.push(trace.clone());
+        }
+        
+
         
 
 
@@ -104,4 +110,14 @@ fn main(){
     }
     println!("Finished!");
     
+
+    use std::fs::File;
+    use std::io::Write;
+
+    let mut file = File::create("trace.txt").unwrap();
+    for line in trace_buffer.iter(){
+        file.write(line.as_bytes()).unwrap();
+    }
+    file.flush().unwrap();
+    println!("Saved file!")
 }

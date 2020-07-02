@@ -224,8 +224,5 @@ impl Memory{
         self.wb(0xFE00 + i, b);
     }
     }       
-    pub fn set_bios(&mut self, value: bool){
-        self.in_bios = value;
-    }
 }
 
