@@ -57,7 +57,7 @@ impl CPU {
         }
     }
     pub fn load_rom(&mut self){
-        let mut rom = ROM::new(String::from("./roms/cpu_instrs/cpu_instrs/individual/01-special.gb"));
+        let mut rom = ROM::new(String::from("./roms/01.gb"));
         rom.load();
         let mut index = 0x0;
         for line in rom.content.iter(){
@@ -110,7 +110,14 @@ impl CPU {
                 0x1 => {
                     self.ld(Target::BC, v);
                     self.registers.pc += 3;
+                    
                     12
+                    
+                }
+                0x2 => {
+                    self.memory.wb(self.registers.get_bc(), self.registers.a);
+                    self.registers.pc += 1;
+                    8
                 }
                 0x3 => {
                     self.inc(Target::BC);
@@ -132,6 +139,20 @@ impl CPU {
                     self.registers.pc += 2;
                     8
                 }
+                0x7 => {
+                    let new_val = ((self.registers.a as u16) << 1) + ((self.registers.a as u16) >> 7);
+
+                    self.registers.set_zero(false);
+                    self.registers.set_sub(false);
+                    self.registers.set_half(false);
+                    self.registers.set_carry(new_val > 0xFF);
+
+                    let new_val = (new_val & 0xFF) as u8;
+                    self.registers.a = new_val;
+
+                    self.registers.pc += 1;
+                    4
+                }
                 0x8 => {
                     
                     self.memory.wb(v as u16, (self.registers.sp & 0xFF) as u8);
@@ -147,8 +168,6 @@ impl CPU {
                 0xC => {
                     self.inc(Target::C);
                     self.registers.pc += 1;
-                    
-                    //panic!("{:#x?} - {:#x?}", self.registers.get_de(), opcode);
                     4
                 }
                 0xD => {
@@ -164,7 +183,8 @@ impl CPU {
                 0x11 => {
                     self.ld(Target::DE, v);
                     self.registers.pc += 3;
- 
+                    
+                    
                    
                     12
                 }
@@ -179,6 +199,10 @@ impl CPU {
                     8
                 }
                 0x14 => {
+                    if self.registers.get_de() == 0x0{
+                        println!("{:#x?}, {:#x?}, {:#x?}, {:#x?}",self.memory.rb(self.registers.pc + 1), self.registers.pc + 1, self.registers.sp, self.registers.a);
+                        std::thread::sleep(std::time::Duration::from_secs(3));
+                    }
                     self.inc(Target::D);
                     self.registers.pc += 1;
 
@@ -238,7 +262,9 @@ impl CPU {
                     4
                 }
                 0x20 => {
+
                     self.registers.pc += 2;
+                    
                     if self.registers.get_zero() == false{
                         let pc = self.registers.pc as i16;
                         let val = v as i8;
@@ -281,11 +307,11 @@ impl CPU {
                 }
                 0x27 => { //DAA
                     if !self.registers.get_sub(){
-                        if self.registers.get_carry() || self.registers.a > 0x99{
+                        if self.registers.get_carry() || (self.registers.a > 0x99){
                             self.registers.a = self.registers.a.wrapping_add(0x60);
                             self.registers.set_carry(true);
                         }
-                        if self.registers.get_half() || self.registers.a & 0x0F > 0x09{
+                        if self.registers.get_half() || ((self.registers.a & 0x0F) > 0x09){
                             self.registers.a = self.registers.a.wrapping_add(0x6);
                         }
                     }else{
@@ -301,7 +327,7 @@ impl CPU {
                     self.registers.set_half(false);
 
                     self.registers.pc += 1;
-
+                    
                     
                     4 //timer
                 }
@@ -384,7 +410,7 @@ impl CPU {
                     self.registers.set_sub(false);
                     self.registers.set_half((val & 0xF) + ((1 as u8) & 0xF) > 0xF);
                
-                    self.memory.wb(self.registers.get_hl(),new_value);
+                    self.memory.wb(self.registers.get_hl(), new_value);
                     self.registers.pc += 1;
                     12
                 }
@@ -396,6 +422,11 @@ impl CPU {
                     self.registers.set_half(((val as i16) & 0xF) - ((1 as i16) & 0xF) < 0x0);
                     self.memory.wb(self.registers.get_hl(), new_val);
                     self.registers.pc += 1;
+                    12
+                }
+                0x36 => {
+                    self.memory.wb(self.registers.get_hl(), v as u8);
+                    self.registers.pc += 2;
                     12
                 }
                 0x38 => {
@@ -491,10 +522,16 @@ impl CPU {
                 0x5F => {
                     self.ld(Target::E, self.registers.a as usize);
                     self.registers.pc += 1;
+                    
                     4
                 }
                 0x62 => {
                     self.ld(Target::H, self.registers.d as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x65 => {
+                    self.ld(Target::H, self.registers.l as usize);
                     self.registers.pc += 1;
                     4
                 }
@@ -506,6 +543,11 @@ impl CPU {
                 }
                 0x67 => {
                     self.ld(Target::H, self.registers.a as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x69 => {
+                    self.ld(Target::L, self.registers.c as usize);
                     self.registers.pc += 1;
                     4
                 }
@@ -545,6 +587,19 @@ impl CPU {
                     self.registers.pc += 1;
                     8
                 }
+                0x75 => {
+                    self.memory.wb(self.registers.get_hl(), self.registers.l);
+                    self.registers.pc += 1;
+                    8
+                }
+                0x76 => {
+                    if self.cpu_interrupt == true{
+                        self.pause = true;
+                    }else{
+                        self.registers.pc += 1;
+                    }
+                    4
+                }
                 0x77 => {
                     self.memory.wb(self.registers.get_hl(), self.registers.a);
                     self.registers.pc += 1;
@@ -570,7 +625,7 @@ impl CPU {
                 0x7B => {
                     self.ld(Target::A, self.registers.e as usize);
                     self.registers.pc += 1;
-
+                    
                     4
                 }
                 0x7C => {
@@ -590,6 +645,16 @@ impl CPU {
                     self.registers.pc += 1;
                     8
                 }
+                0x81 => {
+                    self.add(Target::A, self.registers.c as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x85 => {
+                    self.add(Target::A, self.registers.l as usize);
+                    self.registers.pc += 1;
+                    4
+                }
                 0x88 => {
                     self.adc(Target::A, self.registers.b as usize);
                     self.registers.pc += 1;
@@ -600,10 +665,36 @@ impl CPU {
                     self.registers.pc += 1;
                     4
                 }
+                0x8E => {
+                    let val = self.memory.rb(self.registers.get_hl());
+                    self.adc(Target::A, val as usize);
+                    self.registers.pc += 1;
+                    8
+                }
                 0x90 => {
                     self.sub(Target::A, self.registers.b as usize);
                     self.registers.pc += 1;
                     
+                    4
+                }
+                0x91 => {
+                    self.sub(Target::A, self.registers.c as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x92 => {
+                    self.sub(Target::A, self.registers.d as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0xA1 => {
+                    self.and(self.registers.c);
+                    self.registers.pc += 1;
+                    4
+                }
+                0xA7 => {
+                    self.and(self.registers.a);
+                    self.registers.pc += 1;
                     4
                 }
                 0xA9 => {
@@ -663,6 +754,17 @@ impl CPU {
                     self.registers.pc += 1;
                     8
                 }
+                0xC0 => {
+                    if self.registers.get_zero() == false{
+                        self.registers.pc = (self.memory.rb(self.registers.sp.wrapping_add(1)) as u16) << 8;
+                        self.registers.pc |= self.memory.rb(self.registers.sp) as u16;
+                        self.registers.sp = self.registers.sp.wrapping_add(2);
+                        20
+                    }else{
+                        self.registers.pc += 1;
+                        8
+                    }
+                }
                 0xC1 => {
                     self.registers.b = self.memory.rb(self.registers.sp.wrapping_add(1));
                     self.registers.c = self.memory.rb(self.registers.sp);
@@ -711,7 +813,7 @@ impl CPU {
 
                     self.add(Target::A, v);
                     self.registers.pc += 2;
-
+                    
                     8
                 }
                 0xC8 => {
@@ -734,7 +836,6 @@ impl CPU {
                 0xCB => {
                     self.registers.pc += 1;
                     let val = self.memory.rb(self.registers.pc);
-                    //println!("Opcode CB: {:#x?}", val);
                     let delay = self.execute_cb(val, v);
                     self.registers.pc += 1;
                     4 + delay
@@ -757,7 +858,7 @@ impl CPU {
                     self.memory.wb(self.registers.sp.wrapping_sub(2), (self.registers.pc & 0xFF) as u8);
                     self.registers.sp = self.registers.sp.wrapping_sub(2);
                     self.registers.pc = v as u16;
-
+                    
                     24
                 }
                 0xCE => {
@@ -791,6 +892,7 @@ impl CPU {
                     self.memory.wb(self.registers.sp.wrapping_sub(2), self.registers.e);
                     self.registers.sp = self.registers.sp.wrapping_sub(2);
                     self.registers.pc += 1;
+                    
 
                     16
                 }
@@ -868,6 +970,14 @@ impl CPU {
                     self.registers.pc += 3;
                     16
                 }
+                0xEF => {
+                    self.registers.pc += 1;
+                    self.memory.wb(self.registers.sp.wrapping_sub(1), (self.registers.pc >> 8) as u8);
+                    self.memory.wb(self.registers.sp.wrapping_sub(2), (self.registers.pc & 0xFF) as u8);
+                    self.registers.sp = self.registers.sp.wrapping_sub(2);
+                    self.registers.pc = 40;
+                    16
+                }
                 0xF0 => {
                     let val = self.memory.rb(0xFF00 + ((v as u8) as u16));
                     self.ld(Target::A, val as usize);
@@ -886,7 +996,7 @@ impl CPU {
                     self.registers.sp = self.registers.sp.wrapping_add(2);
                     self.registers.pc += 1;
 
-            
+                    
                     12
                 }
                 0xF3 => {
@@ -900,7 +1010,7 @@ impl CPU {
                     self.registers.sp = self.registers.sp.wrapping_sub(2);
                     self.registers.pc += 1;
                     
-
+                   
                     
                     16
                 }
@@ -1076,7 +1186,8 @@ impl CPU {
 
                 self.registers.set_zero(false);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.sp & 0xFFF) + ((value as u16) & 0xFFF) > 0xFFF);                self.registers.set_carry(did_overflow);
+                self.registers.set_half((self.registers.sp & 0xF) + ((value as u16) & 0xF) > 0xF);                
+                self.registers.set_carry((self.registers.sp & 0xFF) + ((value as u16) & 0xFF) > 0xFF);
                 
                 self.registers.sp = new_value;
             }
@@ -1085,7 +1196,7 @@ impl CPU {
 
                 
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.get_hl() & 0xFFF) + (value as u16 & 0xFFF) > 0xFFF);
+                self.registers.set_half((self.registers.get_hl() & 0xFFF) + ((value as u16) & 0xFFF) > 0xFFF);
                 self.registers.set_carry(did_overflow);
 
                 self.registers.set_hl(new_value);
@@ -1096,7 +1207,7 @@ impl CPU {
 
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.get_de() & 0xFFF) + (value as u16 & 0xFFF) > 0xFFF);
+                self.registers.set_half((self.registers.get_de() & 0xFFF) + ((value as u16) & 0xFFF) > 0xFFF);
                 
                 self.registers.set_de(new_value);
             }
@@ -1106,7 +1217,7 @@ impl CPU {
 
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.get_bc() & 0xFFF) + (value as u16 & 0xFFF) > 0xFFF);
+                self.registers.set_half((self.registers.get_bc() & 0xFFF) + ((value as u16) & 0xFFF) > 0xFFF);
                 
                 self.registers.set_bc(new_value);
             }
@@ -1122,7 +1233,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(true);
-                self.registers.set_half(((self.registers.a as i8) & 0xF) - ((value & 0xF) as i8) < 0);
+                self.registers.set_half(((self.registers.a & 0xF) as i8) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.a = new_value;
             }
@@ -1132,7 +1243,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(true);
-                self.registers.set_half(((self.registers.b as i8) & 0xF) - ((value & 0xF) as i8) < 0);
+                self.registers.set_half(((self.registers.b & 0xF) as i8) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.b = new_value;
             }
@@ -1142,7 +1253,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(true);
-                self.registers.set_half(((self.registers.c as i8) & 0xF) - ((value & 0xF) as i8) < 0);
+                self.registers.set_half(((self.registers.c & 0xF) as i8) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.c = new_value;
             }
@@ -1152,7 +1263,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(true);
-                self.registers.set_half(((self.registers.d as i8) & 0xF) - ((value & 0xF) as i8) < 0);
+                self.registers.set_half(((self.registers.d & 0xF) as i8) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.d = new_value;
             }
@@ -1162,7 +1273,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(true);
-                self.registers.set_half(((self.registers.e as i8) & 0xF) - ((value & 0xF) as i8) < 0);
+                self.registers.set_half(((self.registers.e & 0xF) as i8) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.e = new_value;
             }
@@ -1172,7 +1283,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(true);
-                self.registers.set_half(((self.registers.h as i8) & 0xF) - ((value & 0xF) as i8) < 0);
+                self.registers.set_half(((self.registers.h & 0xF) as i8) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.h = new_value;
             }
@@ -1182,7 +1293,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(true);
-                self.registers.set_half(((self.registers.l as i8) & 0xF) - ((value & 0xF) as i8) < 0);
+                self.registers.set_half(((self.registers.l & 0xF) as i8) - ((value & 0xF) as i8) < 0);
                 
                 self.registers.l = new_value;
             }
@@ -1216,7 +1327,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(true);
-                self.registers.set_half((self.registers.a & 0xF).overflowing_sub((value as u8 + if self.registers.get_carry() { 1 } else { 0 }) & 0xF).1);
+                self.registers.set_half(((self.registers.a as i16) & 0xF) - (((value + if self.registers.get_carry() { 1 } else { 0 }) & 0xF) as i16) < 0);
                 
                 self.registers.a = new_value;
             }
@@ -1263,7 +1374,7 @@ impl CPU {
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(true);
-                self.registers.set_half(((self.registers.a as i8) & 0xF) - ((value & 0xF) as i8) < 0);
+                self.registers.set_half(((self.registers.a & 0xF) as i8) - ((value & 0xF) as i8) < 0);
 
             }
             
@@ -1522,7 +1633,7 @@ impl CPU {
             Target::HL => {//mem address
                 let val =self.memory.rb(self.registers.get_hl()) ^  (1 << value);
                 self.memory.wb(self.registers.get_hl(), val);
-                self.registers.set_zero(self.memory.rb(self.registers.get_hl()) == 0);
+                self.registers.set_zero(val == 0);
                 self.registers.set_half(true);
                 self.registers.set_sub(false);
             }, 
@@ -1810,7 +1921,9 @@ impl CPU {
     }
     fn rla(&mut self){
 
-        let (val, overflow) = self.registers.a.overflowing_shl(1 + self.registers.get_carry() as u32);
+        let (mut val, overflow) = self.registers.a.overflowing_shl(1);
+        val = val.overflowing_add(self.registers.get_carry() as u8).0;
+
         self.registers.set_zero(false);
         self.registers.set_half(false);
         self.registers.set_sub(false);
@@ -1819,7 +1932,8 @@ impl CPU {
     }
     fn rra(&mut self){
 
-        let (val, overflow) = self.registers.a.overflowing_shr(1 + self.registers.get_carry() as u32);
+        let (mut val, overflow) = self.registers.a.overflowing_shr(1);
+        val = val.overflowing_add(self.registers.get_carry() as u8).0;
         self.registers.set_zero(false);
         self.registers.set_half(false);
         self.registers.set_sub(false);

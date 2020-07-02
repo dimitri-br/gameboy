@@ -229,7 +229,7 @@ impl GPU {
                     ((self.csprit[palnum][colnum][1] & 0x18) >> 3) | (self.csprit[palnum][colnum][2] << 2)
                 }
             },
-            _ => panic!("GPU does not handle read {:04X}", address),
+            _ => {panic!("GPU does not handle read {:04X}", address)},
         }
     }
     fn rbvram0(&self, a: u16) -> u8 {
