@@ -140,15 +140,15 @@ impl CPU {
                     8
                 }
                 0x7 => {
-                    let new_val = ((self.registers.a as u16) << 1) + ((self.registers.a as u16) >> 7);
+                    let (new_val, overflow) = ((self.registers.a as u16) << 1).overflowing_add((self.registers.a as u16) >> 7);
 
                     self.registers.set_zero(false);
                     self.registers.set_sub(false);
                     self.registers.set_half(false);
-                    self.registers.set_carry(new_val > 0xFF);
+                    self.registers.set_carry(overflow);
 
-                    let new_val = (new_val & 0xFF) as u8;
-                    self.registers.a = new_val;
+
+                    self.registers.a = new_val as u8;
 
                     self.registers.pc += 1;
                     4
@@ -199,10 +199,7 @@ impl CPU {
                     8
                 }
                 0x14 => {
-                    if self.registers.get_de() == 0x0{
-                        println!("{:#x?}, {:#x?}, {:#x?}, {:#x?}",self.memory.rb(self.registers.pc + 1), self.registers.pc + 1, self.registers.sp, self.registers.a);
-                        std::thread::sleep(std::time::Duration::from_secs(3));
-                    }
+                    
                     self.inc(Target::D);
                     self.registers.pc += 1;
 
@@ -306,26 +303,24 @@ impl CPU {
                     8
                 }
                 0x27 => { //DAA
-                    if !self.registers.get_sub(){
-                        if self.registers.get_carry() || (self.registers.a > 0x99){
-                            self.registers.a = self.registers.a.wrapping_add(0x60);
-                            self.registers.set_carry(true);
-                        }
-                        if self.registers.get_half() || ((self.registers.a & 0x0F) > 0x09){
-                            self.registers.a = self.registers.a.wrapping_add(0x6);
-                        }
-                    }else{
-                        if self.registers.get_carry(){
-                            self.registers.a = self.registers.a.wrapping_sub(0x60);
-                            self.registers.set_carry(true);
-                        }
-                        if self.registers.get_half(){
-                            self.registers.a = self.registers.a.wrapping_sub(0x06);
-                        }
-                    }
-                    self.registers.set_zero(self.registers.a == 0);
-                    self.registers.set_half(false);
+                    let a = self.registers.a;
+                    let mut corr = 0;
+                    let mut setc = false;
 
+                    if (self.registers.get_carry()) || ((!self.registers.get_sub()) && (a & 0xf) > 9){
+                        corr |= 0x6;
+                    }
+
+                    if (self.registers.get_carry()) || ((!self.registers.get_sub()) && a > 0x99){
+                        corr |= 0x60;
+                        setc = true;
+                    }
+                    if self.registers.get_sub() { self.registers.a -= corr; }else{ self.registers.a += corr;};
+                    
+                    
+                    self.registers.set_carry(setc);
+                    self.registers.set_half(false);
+                    self.registers.set_zero(self.registers.a == 0);
                     self.registers.pc += 1;
                     
                     
@@ -465,8 +460,33 @@ impl CPU {
                     self.registers.pc += 2;
                     8
                 }
+                0x40 => {
+                    self.ld(Target::B, self.registers.b as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x41 => {
+                    self.ld(Target::B, self.registers.c as usize);
+                    self.registers.pc += 1;
+                    4
+                }
                 0x42 => {
                     self.ld(Target::B, self.registers.d as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x43 => {
+                    self.ld(Target::B, self.registers.e as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x44 => {
+                    self.ld(Target::B, self.registers.h as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x45 => {
+                    self.ld(Target::B, self.registers.l as usize);
                     self.registers.pc += 1;
                     4
                 }
@@ -481,6 +501,36 @@ impl CPU {
                     self.registers.pc += 1;
                     4
                 }
+                0x48 => {
+                    self.ld(Target::C, self.registers.b as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x49 => {
+                    self.ld(Target::C, self.registers.c as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x4A => {
+                    self.ld(Target::C, self.registers.d as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x4B => {
+                    self.ld(Target::C, self.registers.e as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x4C => {
+                    self.ld(Target::C, self.registers.h as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x4D => {
+                    self.ld(Target::C, self.registers.l as usize);
+                    self.registers.pc += 1;
+                    4
+                }
                 0x4E => {
                     let val = self.memory.rb(self.registers.get_hl()) as usize;
                     self.ld(Target::C, val);
@@ -489,6 +539,36 @@ impl CPU {
                 }
                 0x4F => {
                     self.ld(Target::C, self.registers.a as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x50 => {
+                    self.ld(Target::D, self.registers.b as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x51 => {
+                    self.ld(Target::D, self.registers.c as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x52 => {
+                    self.ld(Target::D, self.registers.d as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x53 => {
+                    self.ld(Target::D, self.registers.e as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x54 => {
+                    self.ld(Target::D, self.registers.h as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x55 => {
+                    self.ld(Target::D, self.registers.l as usize);
                     self.registers.pc += 1;
                     4
                 }
@@ -505,6 +585,26 @@ impl CPU {
                 }
                 0x58 => {
                     self.ld(Target::E, self.registers.b as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x59 => {
+                    self.ld(Target::E, self.registers.c as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x5A => {
+                    self.ld(Target::E, self.registers.d as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x5B => {
+                    self.ld(Target::E, self.registers.e as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x5C => {
+                    self.ld(Target::E, self.registers.h as usize);
                     self.registers.pc += 1;
                     4
                 }
@@ -525,12 +625,32 @@ impl CPU {
                     
                     4
                 }
+                0x60 => {
+                    self.ld(Target::H, self.registers.b as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x61 => {
+                    self.ld(Target::H, self.registers.c as usize);
+                    self.registers.pc += 1;
+                    4
+                }
                 0x62 => {
                     self.ld(Target::H, self.registers.d as usize);
                     self.registers.pc += 1;
                     4
                 }
-                0x65 => {
+                0x63 => {
+                    self.ld(Target::H, self.registers.e as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x64 => {
+                    self.ld(Target::H, self.registers.h as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x64 => {
                     self.ld(Target::H, self.registers.l as usize);
                     self.registers.pc += 1;
                     4
@@ -546,13 +666,33 @@ impl CPU {
                     self.registers.pc += 1;
                     4
                 }
+                0x68 => {
+                    self.ld(Target::L, self.registers.b as usize);
+                    self.registers.pc += 1;
+                    4
+                }
                 0x69 => {
                     self.ld(Target::L, self.registers.c as usize);
                     self.registers.pc += 1;
                     4
                 }
+                0x6A => {
+                    self.ld(Target::L, self.registers.d as usize);
+                    self.registers.pc += 1;
+                    4
+                }
                 0x6B => {
                     self.ld(Target::L, self.registers.e as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x6C => {
+                    self.ld(Target::L, self.registers.h as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x6D => {
+                    self.ld(Target::L, self.registers.l as usize);
                     self.registers.pc += 1;
                     4
                 }
@@ -584,6 +724,11 @@ impl CPU {
                 }
                 0x73 => {
                     self.memory.wb(self.registers.get_hl(), self.registers.e);
+                    self.registers.pc += 1;
+                    8
+                }
+                0x74 => {
+                    self.memory.wb(self.registers.get_hl(), self.registers.h);
                     self.registers.pc += 1;
                     8
                 }
@@ -645,8 +790,33 @@ impl CPU {
                     self.registers.pc += 1;
                     8
                 }
+                0x7F => {
+                    self.add(Target::A, self.registers.a as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x80 => {
+                    self.add(Target::A, self.registers.b as usize);
+                    self.registers.pc += 1;
+                    4
+                }
                 0x81 => {
                     self.add(Target::A, self.registers.c as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x82 => {
+                    self.add(Target::A, self.registers.d as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x83 => {
+                    self.add(Target::A, self.registers.e as usize);
+                    self.registers.pc += 1;
+                    4
+                }
+                0x84 => {
+                    self.add(Target::A, self.registers.h as usize);
                     self.registers.pc += 1;
                     4
                 }
