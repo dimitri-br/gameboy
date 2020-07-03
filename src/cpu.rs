@@ -61,7 +61,7 @@ impl CPU {
         }
     }
     pub fn load_rom(&mut self){
-        let mut rom = ROM::new(String::from("./roms/01.gb"));
+        let mut rom = ROM::new(String::from("./roms/boot.bin"));
         rom.load();
         let mut index = 0x0;
         for line in rom.content.iter(){
@@ -96,16 +96,18 @@ impl CPU {
                 v = (a << 8) + b;
 
             }
-            let af = self.registers.get_af();
-            let f = self.registers.get_f();
+
             //println!("DEBUG:\nOpcode: {:#x?}\nPC: {:#x?}\nSP: {:#x?}\nA: {:#x?}\nC: {:#x?}\nHL: {:#x?}\nV: {:#x?}\nZ: {}\nCarry: {}",opcode, self.registers.pc, self.registers.sp, self.registers.a, self.registers.c, self.registers.get_hl(), v, self.registers.get_zero(), self.registers.get_carry());
             
+            let f = self.registers.get_f();
+            let trace = format!("A: {:x?} F: {:x?} B: {:x?} C: {:x?} D: {:x?} E: {:x?} H: {:x?} L: {:x?} SP: {:x?} PC: 00:{:x?} | {:x?}\n", self.registers.a, f, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l, self.registers.sp, self.registers.pc, opcode);
+            println!("{}",trace);
+            self.trace.push(trace);
 
             self.delay += self.execute(opcode, v) as u32;
 
             self.memory.gpu.do_cycle(self.delay);
-            self.trace.push(format!("PC: {:#x?} - SP: {:#x?} - Opcode: {:#x?} - AF: {:#x?} - BC: {:#x?} - DE: {:#x?} - HL: {:#x?} - F: {:#x?}\n", self.registers.pc, self.registers.sp, opcode, af, self.registers.get_bc(), self.registers.get_de(), self.registers.get_hl(), f));
-
+            
         }
         
         
@@ -1578,7 +1580,7 @@ impl CPU {
 
                     self.registers.set_zero(false);
                     self.registers.set_sub(false);
-                    self.registers.set_carry((new_val & 0xFF) + (new_v & 0xFF) > 0xFF);
+                    self.registers.set_carry(overflow);
                     self.registers.set_half((new_val & 0xF) + (new_v & 0xF) > 0xF);
 
                     self.registers.pc += 2;
@@ -1882,7 +1884,7 @@ impl CPU {
         match target{
             Target::A => {
                 let (mut new_value, did_overflow) = self.registers.a.overflowing_sub(value as u8);
-                new_value += if self.registers.get_carry() { 1 } else { 0 };
+                new_value -= if self.registers.get_carry() { 1 } else { 0 };
                 self.registers.set_zero(new_value == 0);
                 self.registers.set_carry(did_overflow);
                 self.registers.set_sub(true);

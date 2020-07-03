@@ -135,7 +135,7 @@ impl Memory{
                         
                     }
                     0xF00 => {
-                        if address >= 0xFF80{
+                        if address >= 0xFF80 && address <= 0xFFFE{
                             self.zram[(address & 0x7F)as usize]
                         }else{
                             //io handling go here
@@ -150,6 +150,9 @@ impl Memory{
                                         }
                                     }
                                 }
+                                0x1..=0x2 => {
+                                    //serial
+                                }
                                 0x40..=0x4F => {
                                 
                                     return self.gpu.rb(address)
@@ -158,16 +161,19 @@ impl Memory{
                                     
                                     return self.gpu.rb(address)
                                 }
+                                0x70 => {
+                                    return 0
+                                }
 
                                 _ => { return 0 }
                             }
                             0
                         }
                     }
-                    _ => { 0 }
+                    _ => { panic!("memory: {:#x?}",address) }
                 }
             }
-            _ => { 0 }
+            _ => { panic!("memory: {:#x?}",address) }
         }
     }
     pub fn wb(&mut self, address: u16, value: u8){
@@ -193,6 +199,8 @@ impl Memory{
                     }else{
                         //io handling go here
                         match address & 0x00FF{
+                            0x04..=0x07 => { }//timer
+                            0x10..=0x3F => { }//sound
                             0x46 => {
                                 self.oamdma(value);
                             }
@@ -204,15 +212,14 @@ impl Memory{
                                 
                                 self.gpu.wb(address, value);
                             }
-                            _ => { 0; }
+                            _ => {  }
                         };
-                        0;
                     }
                 }
-                _ => { 0; }
+                _ => { panic!("memory: {:#x?}",address) }
             }  
         }
-        _ => { 0; }
+        _ => { panic!("memory: {:#x?}",address) }
     }
 }
 

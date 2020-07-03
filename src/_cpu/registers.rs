@@ -26,16 +26,16 @@ pub struct Flags{
 impl Registers{
     pub fn new() -> Self{
         Registers {
-            a: 0,
+            a: 0x0,
             f: Flags { zero: false, sub: false, half: false, carry: false },
-            b: 0,
-            c: 0,
-            d: 0,
-            e: 0,
-            h: 0,
-            l: 0,
-            pc: 0x100, 
-            sp: 0,
+            b: 0x0,
+            c: 0x0,
+            d: 0x0,
+            e: 0x0,
+            h: 0x0,
+            l: 0x0,
+            pc: 0x0, 
+            sp: 0x0,
         }
     }
 

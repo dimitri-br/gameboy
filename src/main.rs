@@ -44,7 +44,18 @@ fn main(){
     cpu.load_rom();
     println!("Loaded ROM!");
 
-    cpu.memory.set_initial();
+    //cpu.memory.set_initial();
+    
+    
+
+    //cpu.registers.set_af(0x01B0);
+    //cpu.registers.set_bc(0x0013);
+    //cpu.registers.set_de(0x00D8);
+    //cpu.registers.set_hl(0x014D);
+    //cpu.registers.sp = 0xFFFE;
+
+    cpu.registers.pc = 0x0;
+    
 
     println!("Set initial!");
 
@@ -110,7 +121,11 @@ fn main(){
     }
     println!("Finished!");
     
+    save(trace_buffer);
 
+    
+}
+fn save(trace_buffer: Vec::<String>){
     use std::fs::File;
     use std::io::Write;
 
