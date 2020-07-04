@@ -44,7 +44,7 @@ fn main(){
     cpu.load_rom();
     println!("Loaded ROM!");
 
-    //cpu.memory.set_initial();
+    cpu.memory.set_initial();
     
     
 
@@ -98,7 +98,7 @@ fn main(){
 
 
         
-        if cpu.registers.pc >= 0xFFFF{
+        if cpu.registers.pc > 0xFFFF{
             break 'running;
         }
         for x in 0..160{
