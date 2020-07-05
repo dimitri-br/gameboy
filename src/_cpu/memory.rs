@@ -35,8 +35,8 @@ const VRAM_SIZE: usize = VRAM_END - VRAM_BEGIN + 1;
 pub struct Memory{
     pub gpu: GPU,
     pub in_bios: bool,
-    bios: [u8; 0x100], //bios (becomes available to rom after boot)
-    rom: [u8; 0x8000], //rom
+    pub bios: [u8; 0x100], //bios (becomes available to rom after boot)
+    pub rom: [u8; 0xFFFF], //rom
     wram: [u8; 0x2000], //working ram
     eram: [u8; 0x2000], //external ram (On cartridge)
     zram: [u8; 0x80], //zero ram (everything 0xFF80 +)
@@ -51,7 +51,7 @@ impl Memory{
             gpu: GPU::new(),
             in_bios: true,
             bios: [0x0; 0x100],
-            rom: [0xFF; 0x8000],
+            rom: [0xFF; 0xFFFF],
             wram: [0x0; 0x2000],
             eram: [0x0; 0x2000],
             zram: [0x0; 0x80],
@@ -99,13 +99,12 @@ impl Memory{
         //TODO - Add memory map
         match address & 0xF000{
             0x0000 => {
-                /*if self.in_bios{
+                if self.in_bios{
                     if address < 0x100{
                         self.bios[address as usize]
                     }
                     else if address >= 0x100{
                         
-                        self.in_bios = false;
                         self.rom[address as usize]
                     }
                     else{
@@ -113,8 +112,7 @@ impl Memory{
                     }
                 }else{
                     self.rom[address as usize]
-                }*/
-                self.rom[address as usize]
+                }
             }
             0x1000..=0x7000 => {self.rom[address as usize]}
             0x8000..=0x9000 => {
@@ -181,8 +179,12 @@ impl Memory{
        // println!("{:#x?}",address);
         //TODO - Add memory map
         match address & 0xF000{
-            0x0000 => {/*if self.in_bios{ if address < 0x100 {self.bios[address as usize] = value}else{self.rom[address as usize] = value;}}*/self.rom[address as usize] = value;}
-            0x1000..=0x7000 => {self.rom[address as usize] = value;}
+            0x0000 => {
+                self.rom[address as usize] = value;
+            } //TODO - add MBC
+            0x1000..=0x7000 => {
+                self.rom[address as usize] = value;
+            }
             0x8000..=0x9000 => {self.gpu.wb(address, value);}
             0xA000..=0xB000 => {self.eram[(self.ramoffs + (address & 0x1FFF)) as usize] = value;}
             0xC000..=0xE000 => {self.wram[(address & 0x1FFF) as usize] = value;}

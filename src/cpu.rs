@@ -580,17 +580,21 @@ impl CPU {
         rom.load();
         let mut index = 0x0;
         for line in rom.content.iter(){
-            self.memory.wb(index, *line);
+            if index == 0x100{
+                break;
+            }
+            self.memory.bios[index] = *line;
             index += 1;
         }
 
-        let mut rom = ROM::new(String::from("./roms/drmario.gb"));
+        let mut rom = ROM::new(String::from("./roms/tetris.gb"));
         rom.load();
         let mut index = 0x100;
         for line in rom.content.iter(){
-            self.memory.wb(index, *line);
+            self.memory.rom[index] = *line;
             index += 1;
         }
+
     }
 }
 
@@ -631,14 +635,15 @@ impl CPU {
             }
             //println!("{}",trace);
             self.trace.push(trace);
-
+            if self.registers.pc == 0x100{
+                self.memory.in_bios = false;
+                break;
+            }
             self.delay += self.execute(opcode, v) as u32;
 
             self.memory.gpu.do_cycle(self.delay);
 
-            if self.registers.pc > 0x100{
-                break;
-            }
+            
             
         }
         
