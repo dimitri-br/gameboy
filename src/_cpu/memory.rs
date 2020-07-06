@@ -43,6 +43,7 @@ pub struct Memory{
 
     ramoffs: u16,
     pub interrupt_flags: u8,
+    pub ie: u8,
 }
 
 impl Memory{
@@ -59,6 +60,7 @@ impl Memory{
             ramoffs: 0,
 
             interrupt_flags: 0,
+            ie: 0,
         }
     }
     pub fn set_initial(&mut self) {
@@ -134,14 +136,17 @@ impl Memory{
                         
                     }
                     0xF00 => {
-                        if address >= 0xFF80 && address <= 0xFFFE{
+                        if address == 0xFFFF { return self.ie }
+                        else if address >= 0xFF80 && address <= 0xFFFE{
                             self.zram[(address & 0x7F)as usize]
                         }else{
                             //io handling go here
                             match address & 0x00FF{
                                 0x0 => {
                                     match address & 0x7{
-                                        15 => {
+                                        0x0 => { } //inp
+                                        0x4..=0x7 => { } //timer
+                                        0xF => {
                                             return self.interrupt_flags
                                         }
                                         _ => {
@@ -197,12 +202,20 @@ impl Memory{
                     self.gpu.wb(address, value);
                 }
                 0xF00 => {
-                    if address >= 0xFF80{
+                    if address == 0xFFFF { self.ie = value; }
+                    else if address >= 0xFF80{
                         self.zram[(address & 0x7F)as usize] = value;
                     }else{
                         //io handling go here
                         match address & 0x00FF{
-                            0x04..=0x07 => { }//timer
+                            0x0 => {
+                                match address & 0xF{
+                                    0x0 => { } //inp
+                                    0x4..=0x7 => { } //timer
+                                    0xF => { self.interrupt_flags = value; }
+                                    _ => {}
+                                }
+                            }
                             0x10..=0x3F => { }//sound
                             0x46 => {
                                 self.oamdma(value);

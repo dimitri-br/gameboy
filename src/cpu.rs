@@ -557,6 +557,7 @@ pub struct CPU{
     pub cpu_interrupt: bool,
     pub delay: u32,
     pub pause: bool,
+    pub halted: bool,
     pub debug: bool,
     pub trace: Vec::<String>,
 }
@@ -571,9 +572,18 @@ impl CPU {
             cpu_interrupt: true,
             delay: 4,
             pause: false,
+            halted: false,
             debug: false,
             trace: Vec::<String>::new(),
         }
+    }
+    pub fn init(&mut self){
+        self.registers.set_af(0x01B0);
+        self.registers.set_bc(0x0013);
+        self.registers.set_de(0x00D8);
+        self.registers.set_hl(0x014D);
+        self.registers.sp = 0xFFFE;
+        self.memory.set_initial();
     }
     pub fn load_rom(&mut self){
         let mut rom = ROM::new(String::from("./roms/boot.bin"));
@@ -587,9 +597,9 @@ impl CPU {
             index += 1;
         }
 
-        let mut rom = ROM::new(String::from("./roms/tetris.gb"));
+        let mut rom = ROM::new(String::from("./roms/02.gb")); //TODO - 2
         rom.load();
-        let mut index = 0x100;
+        let mut index = 0x0;
         for line in rom.content.iter(){
             self.memory.rom[index] = *line;
             index += 1;
@@ -605,51 +615,85 @@ impl CPU {
         self.delay = 0;
         self.trace = Vec::<String>::new();
         while self.delay < max_update{
-            let clockspeed = 4194304;
-        
+            let did_interrupt = self.check_interrupts();
 
-            let opcode = self.memory.rb(self.registers.pc);
-            let opcode_length = OPCODE_LENGTHS[opcode as usize];
-            let mut v : usize = 0;
-            if opcode_length == 2{
-                v = self.memory.rb(self.registers.pc + 1) as usize;
 
-            }
-            if opcode_length == 3{
-                let a = self.memory.rb(self.registers.pc + 2) as usize;
-                let b = self.memory.rb(self.registers.pc + 1) as usize;
-                v = (a << 8) + b;
-
-            }
-
-            //println!("DEBUG:\nOpcode: {:#x?}\nPC: {:#x?}\nSP: {:#x?}\nA: {:#x?}\nC: {:#x?}\nHL: {:#x?}\nV: {:#x?}\nZ: {}\nCarry: {}",opcode, self.registers.pc, self.registers.sp, self.registers.a, self.registers.c, self.registers.get_hl(), v, self.registers.get_zero(), self.registers.get_carry());
-            
-            let f = self.registers.get_f();
-            let mut trace = String::new();
-            if opcode == 0xCB{
-                let cb = self.memory.rb(self.registers.pc + 1);
-                trace = format!("A: {:x?} F: {:x?} B: {:x?} C: {:x?} D: {:x?} E: {:x?} H: {:x?} L: {:x?} SP: {:x?} PC: 00:{:x?} | Opcode: {:x?} : {:x?} -- {:x?}|{}\n", self.registers.a, f, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l, self.registers.sp, self.registers.pc, opcode, cb, v, CPU_COMMANDS[opcode as usize]);
+            if did_interrupt { 
+                self.delay += 4; 
+            }else if self.halted{
+                self.delay += 4;
             }else{
-                trace = format!("A: {:x?} F: {:x?} B: {:x?} C: {:x?} D: {:x?} E: {:x?} H: {:x?} L: {:x?} SP: {:x?} PC: 00:{:x?} | Opcode: {:x?} -- {:x?}|{}\n", self.registers.a, f, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l, self.registers.sp, self.registers.pc, opcode, v, CPU_COMMANDS[opcode as usize]);
-
-            }
-            //println!("{}",trace);
-            self.trace.push(trace);
-            if self.registers.pc == 0x100{
-                self.memory.in_bios = false;
-                break;
-            }
-            self.delay += self.execute(opcode, v) as u32;
-
-            self.memory.gpu.do_cycle(self.delay);
-
+                let clockspeed = 4194304;
             
+
+                let opcode = self.memory.rb(self.registers.pc);
+                let opcode_length = OPCODE_LENGTHS[opcode as usize];
+                let mut v : usize = 0;
+                if opcode_length == 2{
+                    v = self.memory.rb(self.registers.pc + 1) as usize;
+
+                }
+                if opcode_length == 3{
+                    let a = self.memory.rb(self.registers.pc + 2) as usize;
+                    let b = self.memory.rb(self.registers.pc + 1) as usize;
+                    v = (a << 8) + b;
+                }
+
+                let f = self.registers.get_f();
+                let mut trace = String::new();
+                if opcode == 0xCB{
+                    let cb = self.memory.rb(self.registers.pc + 1);
+                    trace = format!("A: {:x?} F: {:x?} B: {:x?} C: {:x?} D: {:x?} E: {:x?} H: {:x?} L: {:x?} SP: {:x?} PC: 00:{:x?} | Opcode: {:x?} : {:x?} -- {:x?}|{}\n", self.registers.a, f, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l, self.registers.sp, self.registers.pc, opcode, cb, v, CPU_COMMANDS[opcode as usize]);
+                }else{
+                    trace = format!("A: {:x?} F: {:x?} B: {:x?} C: {:x?} D: {:x?} E: {:x?} H: {:x?} L: {:x?} SP: {:x?} PC: 00:{:x?} | Opcode: {:x?} -- {:x?}|{}\n", self.registers.a, f, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l, self.registers.sp, self.registers.pc, opcode, v, CPU_COMMANDS[opcode as usize]);
+
+                }
+                //println!("{}",trace);
+                self.trace.push(trace);
+                if self.registers.pc == 0x100{
+
+                    self.memory.in_bios = false;
+                }
+                self.delay += self.execute(opcode, v) as u32;
+                
+                
+
+                
+            }
+            self.memory.gpu.do_cycle(self.delay / 4);
             
         }
         
         
     }
 
+
+    fn check_interrupts(&mut self) -> bool{
+        if self.cpu_interrupt == false && self.halted == false{
+            return false;
+        }
+        let triggered = self.memory.interrupt_flags & self.memory.ie;
+        if triggered == 0{
+            return false;
+        }
+        self.halted = false;
+        if self.cpu_interrupt == false{
+            return false;
+        }
+        self.cpu_interrupt = false;
+
+        let n = triggered.trailing_zeros();
+        if n > 5 {panic!("What u doing >:(");};
+        self.memory.interrupt_flags &= !(1 << n);
+        let pc = self.registers.pc;
+
+        self.memory.wb(self.registers.sp.wrapping_sub(1), (self.registers.pc >> 8) as u8);
+        self.memory.wb(self.registers.sp.wrapping_sub(2), (self.registers.pc & 0xFF) as u8);
+        self.registers.sp = self.registers.sp.wrapping_sub(2);
+
+        self.registers.pc = 0x40 | ((n  as u16) << 3);
+        true
+    }
     pub fn execute(&mut self, opcode: u8, v: usize) -> u8{
             match opcode{
                 0x0 => {
@@ -689,7 +733,8 @@ impl CPU {
                     8
                 }
                 0x7 => { //RLCA
-                    let new_val = (self.registers.a << 1) | if self.registers.get_carry() { 1 }else{ 0 };
+                    let c = self.registers.a & 0x80 == 0x80;
+                    let new_val = self.registers.a.wrapping_shl(1).wrapping_add(if c { 1 }else{ 0 });
 
                     self.registers.set_zero(false);
                     self.registers.set_sub(false);
@@ -741,7 +786,8 @@ impl CPU {
                     8
                 }
                 0xF => { //RRCA
-                    let new_val = (self.registers.a >> 1) | (if self.registers.get_carry() { 0x80 }else{ 0 });
+                    let c = self.registers.a & 0x1 == 0x1;
+                    let new_val = self.registers.a.wrapping_shr(1).wrapping_add(if c { 0x80 }else{ 0 });
 
                     self.registers.set_zero(false);
                     self.registers.set_sub(false);
@@ -883,24 +929,24 @@ impl CPU {
                     8
                 }
                 0x27 => { //DAA
-                    let a = self.registers.a;
-                    let mut corr = 0;
-                    let mut setc = false;
+                    let mut a = self.registers.a;
+                    let mut adjust = if self.registers.get_carry() { 0x60 }else{ 0 };
+                    if self.registers.get_half() { adjust |= 0x6; };
 
-                    if (self.registers.get_carry()) || ((!self.registers.get_sub()) && (a & 0xf) > 9){
-                        corr |= 0x6;
+                    if !self.registers.get_sub(){
+                        if a & 0x0F > 0x09 { adjust |= 0x06; };
+                        if a > 0x99 { adjust |= 0x60; };
+                        a = a.wrapping_add(adjust);
+                    } else {
+                        a = a.wrapping_sub(adjust);
                     }
 
-                    if (self.registers.get_carry()) || ((!self.registers.get_sub()) && a > 0x99){
-                        corr |= 0x60;
-                        setc = true;
-                    }
-                    if self.registers.get_sub() { self.registers.a -= corr; }else{ self.registers.a += corr;};
-                    
-                    
-                    self.registers.set_carry(setc);
+                    self.registers.set_zero(a == 0);
                     self.registers.set_half(false);
-                    self.registers.set_zero(self.registers.a == 0);
+                    self.registers.set_carry(adjust >= 0x60);
+
+
+                    self.registers.a = a;
                     self.registers.pc += 1;
                     
                     
@@ -1341,7 +1387,7 @@ impl CPU {
                 }
                 0x76 => {//HALT
                     if self.cpu_interrupt == true{
-                        self.pause = true;
+                        self.halted = true;
                     }else{
                         self.registers.pc += 1;
                     }
@@ -1391,7 +1437,7 @@ impl CPU {
                     8
                 }
                 0x7F => {
-                    self.add(Target::A, self.registers.a as usize);
+                    self.ld(Target::A, self.registers.a as usize);
                     self.registers.pc += 1;
                     4
                 }
@@ -1447,7 +1493,7 @@ impl CPU {
                     4
                 }
                 0x8A => {
-                    self.add(Target::A, self.registers.d as usize);
+                    self.adc(Target::A, self.registers.d as usize);
                     self.registers.pc += 1;
                     4
                 }
@@ -1591,7 +1637,7 @@ impl CPU {
                 }
                 0xA6 => {
                     let val = self.memory.rb(self.registers.get_hl());
-                    self.and(self.registers.c);
+                    self.and(val);
                     self.registers.pc += 1;
                     8
                 }
@@ -2040,6 +2086,10 @@ impl CPU {
                     self.registers.pc += 3;
                     16
                 }
+                0xED => {
+                    self.registers.pc += 1;
+                    4
+                }
                 0xEE => {
                     self.xor(v as u8);
                     self.registers.pc += 2;
@@ -2109,17 +2159,18 @@ impl CPU {
                     16
                 }
                 0xF8 => {
-                    let new_val = self.registers.sp as i16;
-                    let new_v = (v as i8) as i16;
-                    let (nv, overflow) = new_val.overflowing_add(new_v);
+                    let sp = self.registers.sp as i16;
+                    let v = (v as i8) as i16;
+                    let new_value = sp.wrapping_add(v);
 
-                    self.ld(Target::HL, nv as usize);
+                    
 
                     self.registers.set_zero(false);
                     self.registers.set_sub(false);
-                    self.registers.set_carry(overflow);
-                    self.registers.set_half((new_val & 0xF) + (new_v & 0xF) > 0xF);
+                    self.registers.set_carry((sp & 0xFF) + (v & 0xFF) > 0xFF);
+                    self.registers.set_half((sp & 0xF) + (v & 0xF) > 0xF);
 
+                    self.ld(Target::HL, new_value as usize);
                     self.registers.pc += 2;
                     12
                 }
@@ -2167,8 +2218,105 @@ impl CPU {
 impl CPU{
     pub fn execute_cb(&mut self, opcode: u8, v: usize) -> u8{
         match opcode{
+            0x0 => {
+                self.rlc(Target::B);
+                8
+            }
+            0x1 => {
+                self.rlc(Target::C);
+                8
+            }
+            0x2 => {
+                self.rlc(Target::D);
+                8
+            }
+            0x3 => {
+                self.rlc(Target::E);
+                8
+            }
+            0x4 => {
+                self.rlc(Target::H);
+                8
+            }
+            0x5 => {
+                self.rlc(Target::L);
+                8
+                
+            }
+            0x6 => {
+                self.rlc(Target::HL);
+                16
+            }
+            0x7 => {
+                self.rlc(Target::A);
+                8
+            }
+            0x8 => {
+                self.rrc(Target::B);
+                8
+            }
+            0x9 => {
+                self.rrc(Target::C);
+                8
+            }
+            0xA => {
+                self.rrc(Target::D);
+                8
+            }
+            0xB => {
+                self.rrc(Target::E);
+                8
+            }
+            0xC => {
+                self.rrc(Target::H);
+                8
+            }
+            0xD => {
+                self.rrc(Target::L);
+                8
+            }
+            0xE => {
+                self.rrc(Target::HL);
+                8
+            }
+            0xF => {
+                self.rrc(Target::A);
+                8
+            }
+            0x10 => {
+                self.rl(Target::B);
+                8
+            }
             0x11 => {
                 self.rl(Target::C);
+                8
+            }
+            0x12 => {
+                self.rl(Target::D);
+                8
+            }
+            0x13 => {
+                self.rl(Target::E);
+                8
+            }
+            0x14 => {
+                self.rl(Target::H);
+                8
+            }
+            0x15 => {
+                self.rl(Target::L);
+                8
+            }
+            0x16 => {
+                self.rl(Target::HL);
+                16
+            }
+            0x17 => {
+                self.rl(Target::A);
+                8
+            }
+            0x18 => {
+                self.rr(Target::B);
                 8
             }
             0x19 => {
@@ -2183,6 +2331,114 @@ impl CPU{
                 self.rr(Target::E);
                 8
             }
+            0x1C => {
+                self.rr(Target::H);
+                8
+            }
+            0x1D => {
+                self.rr(Target::L);
+                8
+            }
+            0x1E => {
+                self.rr(Target::HL);
+                16
+            }
+            0x1F => {
+                self.rr(Target::A);
+                8
+            }
+            0x20 => {
+                self.sla(Target::B);
+                8
+            }
+            0x21 => {
+                self.sla(Target::C);
+                8
+            }
+            0x22 => {
+                self.sla(Target::D);
+                8
+            }
+            0x23 => {
+                self.sla(Target::E);
+                8
+            }
+            0x24 => {
+                self.sla(Target::H);
+                8
+            }
+            0x25 => {
+                self.sla(Target::L);
+                8
+            }
+            0x26 => {
+                self.sla(Target::HL);
+                16
+            }
+            0x27 => {
+                self.sla(Target::A);
+                8
+            }
+            0x28 => {
+                self.sra(Target::B);
+                8
+            }
+            0x29 => {
+                self.sra(Target::C);
+                8
+            }
+            0x2A => {
+                self.sra(Target::D);
+                8
+            }
+            0x2B => {
+                self.sra(Target::E);
+                8
+            }
+            0x2C => {
+                self.sra(Target::H);
+                8
+            }
+            0x2D => {
+                self.sra(Target::L);
+                8
+            }
+            0x2E => {
+                self.sra(Target::HL);
+                16
+            }
+            0x2F => {
+                self.sra(Target::A);
+                8
+            }
+            0x30 => {
+                self.swap(Target::B);
+                8
+            }
+            0x31 => {
+                self.swap(Target::C);
+                8
+            }
+            0x32=> {
+                self.swap(Target::D);
+                8
+            }
+            0x33 => {
+                self.swap(Target::E);
+                8
+            }
+            0x34 => {
+                self.swap(Target::H);
+                8
+            }
+            0x35 => {
+                self.swap(Target::L);
+                8
+            }
+            0x36 => {
+                self.swap(Target::HL);
+                16
+            }
             0x37 => {
                 self.swap(Target::A);
                 8
@@ -2191,19 +2447,803 @@ impl CPU{
                 self.srl(Target::B);
                 8
             }
+            0x39 => {
+                self.srl(Target::C);
+                8
+            }
+            0x3A => {
+                self.srl(Target::D);
+                8
+            }
+            0x3B => {
+                self.srl(Target::E);
+                8
+            }
+            0x3C => {
+                self.srl(Target::H);
+                8
+            }
+            0x3D => {
+                self.srl(Target::L);
+                8
+            }
+            0x3E => {
+                self.srl(Target::HL);
+                16
+            }
             0x3F => {
                 self.srl(Target::A);
                 8
             }
+            0x40 => {
+                self.bit(Target::B, 0);
+                8
+            }
+            0x41 => {
+                self.bit(Target::C, 0);
+                8
+            }
+            0x42 => {
+                self.bit(Target::D, 0);
+                8
+            }
+            0x43 => {
+                self.bit(Target::E, 0);
+                8
+            }
+            0x44 => {
+                self.bit(Target::H, 0);
+                8
+            }
+            0x45 => {
+                self.bit(Target::L, 0);
+                8
+            }
+            0x46 => {
+                self.bit(Target::HL, 0);
+                12
+            }
+            0x47 => {
+                self.bit(Target::A, 0);
+                8
+            }
+            0x48 => {
+                self.bit(Target::B, 1);
+                8
+            }
+            0x49 => {
+                self.bit(Target::C, 1);
+                8
+            }
+            0x4A => {
+                self.bit(Target::D, 1);
+                8
+            }
+            0x4B => {
+                self.bit(Target::E, 1);
+                8
+            }
+            0x4C => {
+                self.bit(Target::H, 1);
+                8
+            }
+            0x4D => {
+                self.bit(Target::L, 1);
+                8
+            }
+            0x4E => {
+                self.bit(Target::HL, 1);
+                12
+            }
+            0x4F => {
+                self.bit(Target::A, 1);
+                8
+            }
+            0x50 => {
+                self.bit(Target::B, 2);
+                8
+            }
+            0x51 => {
+                self.bit(Target::C, 2);
+                8
+            }
+            0x52 => {
+                self.bit(Target::D, 2);
+                8
+            }
+            0x53 => {
+                self.bit(Target::E, 2);
+                8
+            }
+            0x54 => {
+                self.bit(Target::H, 2);
+                8
+            }
+            0x55 => {
+                self.bit(Target::L, 2);
+                8
+            }
+            0x56 => {
+                self.bit(Target::HL, 2);
+                12
+            }
+            0x57 => {
+                self.bit(Target::A, 2);
+                8
+            }
+            0x58 => {
+                self.bit(Target::B, 3);
+                8
+            }
+            0x59 => {
+                self.bit(Target::C, 3);
+                8
+            }
+            0x5A => {
+                self.bit(Target::D, 3);
+                8
+            }
+            0x5B => {
+                self.bit(Target::E, 3);
+                8
+            }
+            0x5C => {
+                self.bit(Target::H, 3);
+                8
+            }
+            0x5D => {
+                self.bit(Target::L, 3);
+                8
+            }
+            0x5E => {
+                self.bit(Target::HL, 3);
+                12
+            }
+            0x5F => {
+                self.bit(Target::A, 3);
+                8
+            }
+            0x60 => {
+                self.bit(Target::B, 4);
+                8
+            }
+            0x61 => {
+                self.bit(Target::C, 4);
+                8
+            }
+            0x62 => {
+                self.bit(Target::D, 4);
+                8
+            }
+            0x63 => {
+                self.bit(Target::E, 4);
+                8
+            }
+            0x64 => {
+                self.bit(Target::H, 4);
+                8
+            }
+            0x65 => {
+                self.bit(Target::L, 4);
+                8
+            }
+            0x66 => {
+                self.bit(Target::HL, 4);
+                12
+            }
+            0x67 => {
+                self.bit(Target::A, 4);
+                8
+            }
+            0x68 => {
+                self.bit(Target::B, 5);
+                8
+            }
+            0x69 => {
+                self.bit(Target::C, 5);
+                8
+            }
+            0x6A => {
+                self.bit(Target::D, 5);
+                8
+            }
+            0x6B => {
+                self.bit(Target::E, 5);
+                8
+            }
+            0x6C => {
+                self.bit(Target::H, 5);
+                8
+            }
+            0x6D => {
+                self.bit(Target::L, 5);
+                8
+            }
+            0x6E => {
+                self.bit(Target::HL, 5);
+                12
+            }
+            0x6F => {
+                self.bit(Target::A, 5);
+                8
+            }
+            0x70 => {
+                self.bit(Target::B, 6);
+                8
+            }
+            0x71 => {
+                self.bit(Target::C, 6);
+                8
+            }
+            0x72 => {
+                self.bit(Target::D, 6);
+                8
+            }
+            0x73 => {
+                self.bit(Target::E, 6);
+                8
+            }
+            0x74 => {
+                self.bit(Target::H, 6);
+                8
+            }
+            0x75 => {
+                self.bit(Target::L, 6);
+                8
+            }
+            0x76 => {
+                self.bit(Target::HL, 6);
+                12
+            }
+            0x77 => {
+                self.bit(Target::A, 6);
+                8
+            }
+            0x78 => {
+                self.bit(Target::B, 7);
+                8
+            }
+            0x79 => {
+                self.bit(Target::C, 7);
+                8
+            }
+            0x7A => {
+                self.bit(Target::D, 7);
+                8
+            }
+            0x7B => {
+                self.bit(Target::E, 7);
+                8
+            }
+
             0x7C => {
                 self.bit(Target::H, 7);
+                8
+            }
+            0x7D => {
+                self.bit(Target::L, 7);
                 8
             }
             0x7E => {
                 self.bit(Target::HL, 7);
                 12
             }
-            
+            0x7F => {
+                self.bit(Target::A, 7);
+                8
+            }
+            0x80 => {
+                self.reset(Target::B, 0);
+                8
+            }
+            0x81 => {
+                self.reset(Target::C, 0);
+                8
+            }
+            0x82 => {
+                self.reset(Target::D, 0);
+                8
+            }
+            0x83 => {
+                self.reset(Target::E, 0);
+                8
+            }
+            0x84 => {
+                self.reset(Target::H, 0);
+                8
+            }
+            0x85 => {
+                self.reset(Target::L, 0);
+                8
+            }
+            0x86 => {
+                self.reset(Target::HL, 0);
+                16
+            }
+            0x87 => {
+                self.reset(Target::A, 0);
+                8
+            }
+            0x88 => {
+                self.reset(Target::B, 1);
+                8
+            }
+            0x89 => {
+                self.reset(Target::C, 1);
+                8
+            }
+            0x8A => {
+                self.reset(Target::D, 1);
+                8
+            }
+            0x8B => {
+                self.reset(Target::E, 1);
+                8
+            }
+            0x8C => {
+                self.reset(Target::H, 1);
+                8
+            }
+            0x8D => {
+                self.reset(Target::L, 1);
+                8
+            }
+            0x8E => {
+                self.reset(Target::HL, 1);
+                16
+            }
+            0x8F => {
+                self.reset(Target::A, 1);
+                8
+            }
+            0x90 => {
+                self.reset(Target::B, 2);
+                8
+            }
+            0x91 => {
+                self.reset(Target::C, 2);
+                8
+            }
+            0x92 => {
+                self.reset(Target::D, 2);
+                8
+            }
+            0x93 => {
+                self.reset(Target::E, 2);
+                8
+            }
+            0x94 => {
+                self.reset(Target::H, 2);
+                8
+            }
+            0x95 => {
+                self.reset(Target::L, 2);
+                8
+            }
+            0x96 => {
+                self.reset(Target::HL, 2);
+                16
+            }
+            0x97 => {
+                self.reset(Target::A, 2);
+                8
+            }
+            0x98 => {
+                self.reset(Target::B, 3);
+                8
+            }
+            0x99 => {
+                self.reset(Target::C, 3);
+                8
+            }
+            0x9A => {
+                self.reset(Target::D, 3);
+                8
+            }
+            0x9B => {
+                self.reset(Target::E, 3);
+                8
+            }
+            0x9C => {
+                self.reset(Target::H, 3);
+                8
+            }
+            0x9D => {
+                self.reset(Target::L, 3);
+                8
+            }
+            0x9E => {
+                self.reset(Target::HL, 3);
+                16
+            }
+            0x9F => {
+                self.reset(Target::A, 3);
+                8
+            }
+            0xA0 => {
+                self.reset(Target::B, 4);
+                8
+            }
+            0xA1 => {
+                self.reset(Target::C, 4);
+                8
+            }
+            0xA2 => {
+                self.reset(Target::D, 4);
+                8
+            }
+            0xA3 => {
+                self.reset(Target::E, 4);
+                8
+            }
+            0xA4 => {
+                self.reset(Target::H, 4);
+                8
+            }
+            0xA5 => {
+                self.reset(Target::L, 4);
+                8
+            }
+            0xA6 => {
+                self.reset(Target::HL, 4);
+                16
+            }
+            0xA7 => {
+                self.reset(Target::A, 4);
+                8
+            }
+            0xA8 => {
+                self.reset(Target::B, 5);
+                8
+            }
+            0xA9 => {
+                self.reset(Target::C, 5);
+                8
+            }
+            0xAA => {
+                self.reset(Target::D, 5);
+                8
+            }
+            0xAB => {
+                self.reset(Target::E, 5);
+                8
+            }
+            0xAC => {
+                self.reset(Target::H, 5);
+                8
+            }
+            0xAD => {
+                self.reset(Target::L, 5);
+                8
+            }
+            0xAE => {
+                self.reset(Target::HL, 5);
+                16
+            }
+            0xAF => {
+                self.reset(Target::A, 5);
+                8
+            }
+            0xB0 => {
+                self.reset(Target::B, 6);
+                8
+            }
+            0xB1 => {
+                self.reset(Target::C, 6);
+                8
+            }
+            0xB2 => {
+                self.reset(Target::D, 6);
+                8
+            }
+            0xB3 => {
+                self.reset(Target::E, 6);
+                8
+            }
+            0xB4 => {
+                self.reset(Target::H, 6);
+                8
+            }
+            0xB5 => {
+                self.reset(Target::L, 6);
+                8
+            }
+            0xB6 => {
+                self.reset(Target::HL, 6);
+                16
+            }
+            0xB7 => {
+                self.reset(Target::A, 6);
+                8
+            }
+            0xB8 => {
+                self.reset(Target::B, 7);
+                8
+            }
+            0xB9 => {
+                self.reset(Target::C, 7);
+                8
+            }
+            0xBA => {
+                self.reset(Target::D, 7);
+                8
+            }
+            0xBB => {
+                self.reset(Target::E, 7);
+                8
+            }
+            0xBC => {
+                self.reset(Target::H, 7);
+                8
+            }
+            0xBD => {
+                self.reset(Target::L, 7);
+                8
+            }
+            0xBE => {
+                self.reset(Target::HL, 7);
+                16
+            }
+            0xBF => {
+                self.reset(Target::A, 7);
+                8
+            }
+            0xC0 => {
+                self.set(Target::B, 0);
+                8
+            }
+            0xC1 => {
+                self.set(Target::C, 0);
+                8
+            }
+            0xC2 => {
+                self.set(Target::D, 0);
+                8
+            }
+            0xC3 => {
+                self.set(Target::E, 0);
+                8
+            }
+            0xC4 => {
+                self.set(Target::H, 0);
+                8
+            }
+            0xC5 => {
+                self.set(Target::L, 0);
+                8
+            }
+            0xC6 => {
+                self.set(Target::HL, 0);
+                16
+            }
+            0xC7 => {
+                self.set(Target::A, 0);
+                8
+            }
+            0xC8 => {
+                self.set(Target::B, 1);
+                8
+            }
+            0xC9 => {
+                self.set(Target::C, 1);
+                8
+            }
+            0xCA => {
+                self.set(Target::D, 1);
+                8
+            }
+            0xCB => {
+                self.set(Target::E, 1);
+                8
+            }
+            0xCC => {
+                self.set(Target::H, 1);
+                8
+            }
+            0xCD => {
+                self.set(Target::L, 1);
+                8
+            }
+            0xCE => {
+                self.set(Target::HL, 1);
+                16
+            }
+            0xCF => {
+                self.set(Target::A, 1);
+                8
+            }
+            0xD0 => {
+                self.set(Target::B, 2);
+                8
+            }
+            0xD1 => {
+                self.set(Target::C, 2);
+                8
+            }
+            0xD2 => {
+                self.set(Target::D, 2);
+                8
+            }
+            0xD3 => {
+                self.set(Target::E, 2);
+                8
+            }
+            0xD4 => {
+                self.set(Target::H, 2);
+                8
+            }
+            0xD5 => {
+                self.set(Target::L, 2);
+                8
+            }
+            0xD6 => {
+                self.set(Target::HL, 2);
+                16
+            }
+            0xD7 => {
+                self.set(Target::A, 2);
+                8
+            }
+            0xD8 => {
+                self.set(Target::B, 3);
+                8
+            }
+            0xD9 => {
+                self.set(Target::C, 3);
+                8
+            }
+            0xDA => {
+                self.set(Target::D, 3);
+                8
+            }
+            0xDB => {
+                self.set(Target::E, 3);
+                8
+            }
+            0xDC => {
+                self.set(Target::H, 3);
+                8
+            }
+            0xDD => {
+                self.set(Target::L, 3);
+                8
+            }
+            0xDE => {
+                self.set(Target::HL, 3);
+                16
+            }
+            0xDF => {
+                self.set(Target::A, 3);
+                8
+            }
+            0xE0 => {
+                self.set(Target::B, 4);
+                8
+            }
+            0xE1 => {
+                self.set(Target::C, 4);
+                8
+            }
+            0xE2 => {
+                self.set(Target::D, 4);
+                8
+            }
+            0xE3 => {
+                self.set(Target::E, 4);
+                8
+            }
+            0xE4 => {
+                self.set(Target::H, 4);
+                8
+            }
+            0xE5 => {
+                self.set(Target::L, 4);
+                8
+            }
+            0xE6 => {
+                self.set(Target::HL, 4);
+                16
+            }
+            0xE7 => {
+                self.set(Target::A, 4);
+                8
+            }
+            0xE8 => {
+                self.set(Target::B, 5);
+                8
+            }
+            0xE9 => {
+                self.set(Target::C, 5);
+                8
+            }
+            0xEA => {
+                self.set(Target::D, 5);
+                8
+            }
+            0xEB => {
+                self.set(Target::E, 5);
+                8
+            }
+            0xEC => {
+                self.set(Target::H, 5);
+                8
+            }
+            0xED => {
+                self.set(Target::L, 5);
+                8
+            }
+            0xEE => {
+                self.set(Target::HL, 5);
+                16
+            }
+            0xEF => {
+                self.set(Target::A, 5);
+                8
+            }
+            0xF0 => {
+                self.set(Target::B, 6);
+                8
+            }
+            0xF1 => {
+                self.set(Target::C, 6);
+                8
+            }
+            0xF2 => {
+                self.set(Target::D, 6);
+                8
+            }
+            0xF3 => {
+                self.set(Target::E, 6);
+                8
+            }
+            0xF4 => {
+                self.set(Target::H, 6);
+                8
+            }
+            0xF5 => {
+                self.set(Target::L, 6);
+                8
+            }
+            0xF6 => {
+                self.set(Target::HL, 6);
+                16
+            }
+            0xF7 => {
+                self.set(Target::A, 6);
+                8
+            }
+            0xF8 => {
+                self.set(Target::B, 7);
+                8
+            }
+            0xF9 => {
+                self.set(Target::C, 7);
+                8
+            }
+            0xFA => {
+                self.set(Target::D, 7);
+                8
+            }
+            0xFB => {
+                self.set(Target::E, 7);
+                8
+            }
+            0xFC => {
+                self.set(Target::H, 7);
+                8
+            }
+            0xFD => {
+                self.set(Target::L, 7);
+                8
+            }
+            0xFE => {
+                self.set(Target::HL, 7);
+                16
+            }
+            0xFF => {
+                self.set(Target::A, 7);
+                8
+            }
             _ => { panic!("Opcode: CB -> {:#x?}", opcode)}
         }
     }
@@ -2403,12 +3443,13 @@ impl CPU {
         
         match target{
             Target::A => {
-                let (mut new_value, did_overflow) = self.registers.a.overflowing_add(value as u8);
-                new_value += if self.registers.get_carry() { 1 } else { 0 };
+                let c = if self.registers.get_carry() { 1 } else { 0 };
+                let new_value = self.registers.a.wrapping_add(value as u8).wrapping_add(c);
+
                 self.registers.set_zero(new_value == 0);
-                self.registers.set_carry(did_overflow);
+                self.registers.set_carry((self.registers.a as u16) + (value as u16) + (c as u16) > 0xFF);
                 self.registers.set_sub(false);
-                self.registers.set_half((self.registers.a & 0xF) + (((value as u8) & 0xF) + if self.registers.get_carry() { 1 } else { 0 }) > 0xF);
+                self.registers.set_half((self.registers.a & 0xF) + (((value as u8) & 0xF) + (c as u8)) > 0xF);
                 
                 self.registers.a = new_value;
             }
@@ -2420,12 +3461,12 @@ impl CPU {
         
         match target{
             Target::A => {
-                let (mut new_value, did_overflow) = self.registers.a.overflowing_sub(value as u8);
-                new_value -= if self.registers.get_carry() { 1 } else { 0 };
+                let c = if self.registers.get_carry() { 1 } else { 0 };
+                let new_value = self.registers.a.wrapping_sub(value as u8).wrapping_sub(c);
                 self.registers.set_zero(new_value == 0);
-                self.registers.set_carry(did_overflow);
+                self.registers.set_carry((self.registers.a as i16) < (value as i16) + (c as i16));
                 self.registers.set_sub(true);
-                self.registers.set_half(((self.registers.a as i8) & 0xF) - (((value & 0xF) + if self.registers.get_carry() { 1 } else { 0 }) as i8) < 0);
+                self.registers.set_half((self.registers.a & 0xF) < ((value as u8) & 0xF) + c);
                 
                 self.registers.a = new_value;
             }
@@ -2805,7 +3846,7 @@ impl CPU {
     fn srl(&mut self, target: Target){ //value is bit number to set (0 - 7)
         match target{
             Target::A => {
-                let new_val = self.registers.a >> 1;
+                let new_val = self.registers.a.wrapping_shr(1);
                 self.registers.set_zero(new_val == 0);
                 self.registers.set_carry(self.registers.a & 0x1 != 0);
                 self.registers.set_sub(false);
@@ -2813,7 +3854,7 @@ impl CPU {
                 self.registers.a = new_val;
             },
             Target::B => {
-                let new_val = self.registers.b >> 1;
+                let new_val = self.registers.b.wrapping_shr(1);
                 self.registers.set_zero(new_val == 0);
                 self.registers.set_carry(self.registers.b & 0x1 != 0);
                 self.registers.set_sub(false);
@@ -2821,7 +3862,7 @@ impl CPU {
                 self.registers.b = new_val;
             },
             Target::C => {
-                let new_val = self.registers.c >> 1;
+                let new_val = self.registers.c.wrapping_shr(1);
                 self.registers.set_zero(new_val == 0);
                 self.registers.set_carry(self.registers.c & 0x1 != 0);
                 self.registers.set_sub(false);
@@ -2829,7 +3870,7 @@ impl CPU {
                 self.registers.c = new_val;
             },
             Target::D => {
-                let new_val = self.registers.d >> 1;
+                let new_val = self.registers.d.wrapping_shr(1);
                 self.registers.set_zero(new_val == 0);
                 self.registers.set_carry(self.registers.d & 0x1 != 0);
                 self.registers.set_sub(false);
@@ -2837,7 +3878,7 @@ impl CPU {
                 self.registers.d = new_val;
             },
             Target::E => {
-                let new_val = self.registers.e >> 1;
+                let new_val = self.registers.e.wrapping_shr(1);
                 self.registers.set_zero(new_val == 0);
                 self.registers.set_carry(self.registers.e & 0x1 != 0);
                 self.registers.set_sub(false);
@@ -2845,7 +3886,7 @@ impl CPU {
                 self.registers.e = new_val;
             },
             Target::H => {
-                let new_val = self.registers.h >> 1;
+                let new_val = self.registers.h.wrapping_shr(1);
                 self.registers.set_zero(new_val == 0);
                 self.registers.set_carry(self.registers.h & 0x1 != 0);
                 self.registers.set_sub(false);
@@ -2853,7 +3894,7 @@ impl CPU {
                 self.registers.h = new_val;
             },
             Target::L => {
-                let new_val = self.registers.l >> 1;
+                let new_val = self.registers.l.wrapping_shr(1);
                 self.registers.set_zero(new_val == 0);
                 self.registers.set_carry(self.registers.l & 0x1 != 0);
                 self.registers.set_sub(false);
@@ -2862,9 +3903,152 @@ impl CPU {
             },
 
             Target::HL => {//mem address
-                let new_val = self.memory.rb(self.registers.get_hl()) >> 1;
+                let new_val = self.memory.rb(self.registers.get_hl()).wrapping_shr(1);
                 self.registers.set_zero(new_val == 0);
-                self.registers.set_carry(self.registers.a & 0x1 != 0);
+                self.registers.set_carry(self.memory.rb(self.registers.get_hl()) & 0x1 != 0);
+                self.registers.set_sub(false);
+                self.registers.set_half(false);
+                self.memory.wb(self.registers.get_hl(), new_val);
+            }, 
+            _ => {}
+
+        }
+    }
+    fn sla(&mut self, target: Target){ //value is bit number to set (0 - 7)
+        match target{
+            Target::A => {
+                let new_val = self.registers.a.wrapping_shl(1);
+                self.registers.set_zero(new_val == 0);
+                self.registers.set_carry(self.registers.a & 0x80 != 0);
+                self.registers.set_sub(false);
+                self.registers.set_half(false);
+                self.registers.a = new_val;
+            },
+            Target::B => {
+                let new_val = self.registers.b.wrapping_shl(1);
+                self.registers.set_zero(new_val == 0);
+                self.registers.set_carry(self.registers.b & 0x80 != 0);
+                self.registers.set_sub(false);
+                self.registers.set_half(false);
+                self.registers.b = new_val;
+            },
+            Target::C => {
+                let new_val = self.registers.c.wrapping_shl(1);
+                self.registers.set_zero(new_val == 0);
+                self.registers.set_carry(self.registers.c & 0x80 != 0);
+                self.registers.set_sub(false);
+                self.registers.set_half(false);
+                self.registers.c = new_val;
+            },
+            Target::D => {
+                let new_val = self.registers.d.wrapping_shl(1);
+                self.registers.set_zero(new_val == 0);
+                self.registers.set_carry(self.registers.d & 0x80 != 0);
+                self.registers.set_sub(false);
+                self.registers.set_half(false);
+                self.registers.d = new_val;
+            },
+            Target::E => {
+                let new_val = self.registers.e.wrapping_shl(1);
+                self.registers.set_zero(new_val == 0);
+                self.registers.set_carry(self.registers.e & 0x80 != 0);
+                self.registers.set_sub(false);
+                self.registers.set_half(false);
+                self.registers.e = new_val;
+            },
+            Target::H => {
+                let new_val = self.registers.h.wrapping_shl(1);
+                self.registers.set_zero(new_val == 0);
+                self.registers.set_carry(self.registers.h & 0x80 != 0);
+                self.registers.set_sub(false);
+                self.registers.set_half(false);
+                self.registers.h = new_val;
+            },
+            Target::L => {
+                let new_val = self.registers.l.wrapping_shl(1);
+                self.registers.set_zero(new_val == 0);
+                self.registers.set_carry(self.registers.l & 0x80 != 0);
+                self.registers.set_sub(false);
+                self.registers.set_half(false);
+                self.registers.l = new_val;
+            },
+
+            Target::HL => {//mem address
+                let new_val = self.memory.rb(self.registers.get_hl()).wrapping_shl(1);
+                self.registers.set_zero(new_val == 0);
+                self.registers.set_carry(self.memory.rb(self.registers.get_hl()) & 0x80 != 0);
+                self.registers.set_sub(false);
+                self.registers.set_half(false);
+                self.memory.wb(self.registers.get_hl(), new_val);
+            }, 
+            _ => {}
+
+        }
+    }
+    fn sra(&mut self, target: Target){ //value is bit number to set (0 - 7)
+        match target{
+            Target::A => {
+                let new_val = self.registers.a.wrapping_shr(1).wrapping_add(self.registers.a & 0x80);
+                self.registers.set_zero(new_val == 0);
+                self.registers.set_carry(self.registers.a & 0x01 != 0);
+                self.registers.set_sub(false);
+                self.registers.set_half(false);
+                self.registers.a = new_val;
+            },
+            Target::B => {
+                let new_val = self.registers.b.wrapping_shr(1).wrapping_add(self.registers.b & 0x80);
+                self.registers.set_zero(new_val == 0);
+                self.registers.set_carry(self.registers.b & 0x01 != 0);
+                self.registers.set_sub(false);
+                self.registers.set_half(false);
+                self.registers.b = new_val;
+            },
+            Target::C => {
+                let new_val = self.registers.c.wrapping_shr(1).wrapping_add(self.registers.c & 0x80);
+                self.registers.set_zero(new_val == 0);
+                self.registers.set_carry(self.registers.c & 0x01 != 0);
+                self.registers.set_sub(false);
+                self.registers.set_half(false);
+                self.registers.c = new_val;
+            },
+            Target::D => {
+                let new_val = self.registers.d.wrapping_shr(1).wrapping_add(self.registers.d & 0x80);
+                self.registers.set_zero(new_val == 0);
+                self.registers.set_carry(self.registers.d & 0x01 != 0);
+                self.registers.set_sub(false);
+                self.registers.set_half(false);
+                self.registers.d = new_val;
+            },
+            Target::E => {
+                let new_val = self.registers.e.wrapping_shr(1).wrapping_add(self.registers.e & 0x80);
+                self.registers.set_zero(new_val == 0);
+                self.registers.set_carry(self.registers.e & 0x01 != 0);
+                self.registers.set_sub(false);
+                self.registers.set_half(false);
+                self.registers.e = new_val;
+            },
+            Target::H => {
+                let new_val = self.registers.h.wrapping_shr(1).wrapping_add(self.registers.h & 0x80);
+                self.registers.set_zero(new_val == 0);
+                self.registers.set_carry(self.registers.h & 0x01 != 0);
+                self.registers.set_sub(false);
+                self.registers.set_half(false);
+                self.registers.h = new_val;
+            },
+            Target::L => {
+                let new_val = self.registers.l.wrapping_shr(1).wrapping_add(self.registers.l & 0x80);
+                self.registers.set_zero(new_val == 0);
+                self.registers.set_carry(self.registers.l & 0x01 != 0);
+                self.registers.set_sub(false);
+                self.registers.set_half(false);
+                self.registers.l = new_val;
+            },
+
+            Target::HL => {//mem address
+                let hl = self.memory.rb(self.registers.get_hl());
+                let new_val = hl.wrapping_shr(1).wrapping_add(hl & 0x80);
+                self.registers.set_zero(new_val == 0);
+                self.registers.set_carry(hl & 0x01 != 0);
                 self.registers.set_sub(false);
                 self.registers.set_half(false);
                 self.memory.wb(self.registers.get_hl(), new_val);
@@ -3020,7 +4204,7 @@ impl CPU {
     }
     fn rla(&mut self){
 
-        let val = (self.registers.a << 1) + if self.registers.get_carry() { 0x1 }else{ 0 };
+        let val = self.registers.a.wrapping_shl(1) + if self.registers.get_carry() { 0x1 }else{ 0 };
 
         self.registers.set_zero(false);
         self.registers.set_half(false);
@@ -3030,7 +4214,7 @@ impl CPU {
     }
     fn rra(&mut self){
 
-        let val = self.registers.a.rotate_right(1) + if self.registers.get_carry() { 0x80 }else{ 0 };
+        let val = self.registers.a.wrapping_shr(1) + if self.registers.get_carry() { 0x80 }else{ 0 };
         self.registers.set_zero(false);
         self.registers.set_half(false);
         self.registers.set_sub(false);
@@ -3107,6 +4291,167 @@ impl CPU {
             _ => {}
         }
     }
+    fn rlc(&mut self, target: Target){ //value is bit number to set (0 - 7)
+        match target{
+            Target::A => {
+                let c = self.registers.a & 0x80 == 0x80;
+                let val = (self.registers.a << 1) + if c { 0x1 }else{ 0 };
+                self.registers.set_zero(val == 0);
+                self.registers.set_half(false);
+                self.registers.set_sub(false);
+                self.registers.set_carry(self.registers.a & 0x80 != 0);
+                self.registers.a = val;
+            },
+            Target::B => {
+                let c = self.registers.b & 0x80 == 0x80;
+                let val = (self.registers.b << 1) + if c { 0x1 }else{ 0 };
+                self.registers.set_zero(val == 0);
+                self.registers.set_half(false);
+                self.registers.set_sub(false);
+                self.registers.set_carry(self.registers.b & 0x80 != 0);
+                self.registers.b = val;
+            },
+            Target::C => {
+                let c = self.registers.c & 0x80 == 0x80;
+                let val = (self.registers.c << 1) + if c { 0x1 }else{ 0 };
+                self.registers.set_zero(val == 0);
+                self.registers.set_half(false);
+                self.registers.set_sub(false);
+                self.registers.set_carry(self.registers.c & 0x80 != 0);
+                self.registers.c = val;
+            },
+            Target::D => {
+                let c = self.registers.d & 0x80 == 0x80;
+                let val = (self.registers.d << 1) + if c { 0x1 }else{ 0 };
+                self.registers.set_zero(val == 0);
+                self.registers.set_half(false);
+                self.registers.set_sub(false);
+                self.registers.set_carry(self.registers.d & 0x80 != 0);
+                self.registers.d = val;
+            },
+            Target::E => {
+                let c = self.registers.e & 0x80 == 0x80;
+                let val = (self.registers.e << 1) + if c { 0x1 }else{ 0 };
+                self.registers.set_zero(val == 0);
+                self.registers.set_half(false);
+                self.registers.set_sub(false);
+                self.registers.set_carry(self.registers.e & 0x80 != 0);
+                self.registers.e = val;
+            },
+            Target::H => {
+                let c = self.registers.h & 0x80 == 0x80;
+                let val = (self.registers.h << 1) + if c { 0x1 }else{ 0 };
+                self.registers.set_zero(val == 0);
+                self.registers.set_half(false);
+                self.registers.set_sub(false);
+                self.registers.set_carry(self.registers.h & 0x80 != 0);
+                self.registers.h = val;
+            },
+            Target::L => {
+                let c = self.registers.l & 0x80 == 0x80;
+                let val = (self.registers.l << 1) + if c { 0x1 }else{ 0 };
+                self.registers.set_zero(val == 0);
+                self.registers.set_half(false);
+                self.registers.set_sub(false);
+                self.registers.set_carry(self.registers.l & 0x80 != 0);
+                self.registers.l = val;
+            },
+
+            Target::HL => {//mem address
+                let hl = self.memory.rb(self.registers.get_hl());
+                let c = hl & 0x80 == 0x80;
+                let val = (hl << 1) + if c { 0x1 }else{ 0 };
+                self.registers.set_zero(val == 0);
+                self.registers.set_half(false);
+                self.registers.set_sub(false);
+                self.registers.set_carry(hl & 0x80 != 0);
+                self.memory.wb(self.registers.get_hl(), val);
+            }, 
+            _ => {}
+
+        }
+    }
+    fn rrc(&mut self, target: Target){ //value is bit number to set (0 - 7)
+        match target{
+            Target::A => {
+                let c = self.registers.a & 0x1 == 0x1;
+                let val = (self.registers.a >> 1) + if c { 0x80 }else{ 0 };
+                self.registers.set_zero(val == 0);
+                self.registers.set_half(false);
+                self.registers.set_sub(false);
+                self.registers.set_carry(self.registers.a & 0x1 != 0);
+                self.registers.a = val;
+            },
+            Target::B => {
+                let c = self.registers.b & 0x1 == 0x1;
+                let val = (self.registers.b >> 1) + if c { 0x80 }else{ 0 };
+                self.registers.set_zero(val == 0);
+                self.registers.set_half(false);
+                self.registers.set_sub(false);
+                self.registers.set_carry(self.registers.b & 0x1 != 0);
+                self.registers.b = val;
+            },
+            Target::C => {
+                let c = self.registers.c & 0x1 == 0x1;
+                let val = (self.registers.c >> 1) + if c { 0x80 }else{ 0 };
+                self.registers.set_zero(val == 0);
+                self.registers.set_half(false);
+                self.registers.set_sub(false);
+                self.registers.set_carry(self.registers.c & 0x1 != 0);
+                self.registers.c = val;
+            },
+            Target::D => {
+                let c = self.registers.d & 0x1 == 0x1;
+                let val = (self.registers.d >> 1) + if c { 0x80 }else{ 0 };
+                self.registers.set_zero(val == 0);
+                self.registers.set_half(false);
+                self.registers.set_sub(false);
+                self.registers.set_carry(self.registers.d & 0x1 != 0);
+                self.registers.d = val;
+            },
+            Target::E => {
+                let c = self.registers.e & 0x1 == 0x1;
+                let val = (self.registers.e >> 1) + if c { 0x80 }else{ 0 };
+                self.registers.set_zero(val == 0);
+                self.registers.set_half(false);
+                self.registers.set_sub(false);
+                self.registers.set_carry(self.registers.e & 0x1 != 0);
+                self.registers.e = val;
+            },
+            Target::H => {
+                let c = self.registers.h & 0x1 == 0x1;
+                let val = (self.registers.h >> 1) + if c { 0x80 }else{ 0 };
+                self.registers.set_zero(val == 0);
+                self.registers.set_half(false);
+                self.registers.set_sub(false);
+                self.registers.set_carry(self.registers.h & 0x1 != 0);
+                self.registers.h = val;
+            },
+            Target::L => {
+                let c = self.registers.l & 0x1 == 0x1;
+                let val = (self.registers.l >> 1) + if c { 0x80 }else{ 0 };
+                self.registers.set_zero(val == 0);
+                self.registers.set_half(false);
+                self.registers.set_sub(false);
+                self.registers.set_carry(self.registers.l & 0x1 != 0);
+                self.registers.l = val;
+            },
+
+            Target::HL => {//mem address
+                let hl = self.memory.rb(self.registers.get_hl());
+                let c = hl & 0x1 == 0x1;
+                let val = (hl >> 1) + if c { 0x80 }else{ 0 };
+                self.registers.set_zero(val == 0);
+                self.registers.set_half(false);
+                self.registers.set_sub(false);
+                self.registers.set_carry(hl & 0x1 != 0);
+                self.memory.wb(self.registers.get_hl(), val);
+            }, 
+            _ => {}
+
+        }
+    }
+    
 }
 
 //gb functions
