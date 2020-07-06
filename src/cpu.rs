@@ -619,6 +619,16 @@ impl CPU {
         self.delay = 0;
         self.trace = Vec::<String>::new();
         while self.delay < max_update{
+            
+
+            self.check_interrupts();
+            
+
+            if self.ime_delay{
+                
+                self.ime_delay = false;
+                self.ime = true;
+            }
             let opcode = self.memory.rb(self.registers.pc);
             let opcode_length = OPCODE_LENGTHS[opcode as usize];
             let mut v : usize = 0;
@@ -631,17 +641,11 @@ impl CPU {
                 v = (a << 8) + b;
             }
 
-            self.memory.interrupt_flags |= self.memory.timer.inc((self.delay / 4) as u16) as u8;
-
-
-            self.check_interrupts();
-
-            if self.ime_delay{
-                self.ime_delay = false;
-                self.ime = true;
+            let if_v = self.memory.timer.inc((self.delay / 4) as u16) as u8;
+            self.memory.interrupt_flags |= if_v;
+            if if_v == 4{
+                panic!("{:#x?}",self.memory.interrupt_flags);
             }
-            let clockspeed = 4194304;
-            
 
             
 
@@ -667,7 +671,13 @@ impl CPU {
             self.memory.gpu.do_cycle(self.delay / 4);
 
             
-            self.memory.interrupt_flags |= self.memory.timer.inc((self.delay / 4) as u16) as u8;
+
+            let if_v = self.memory.timer.inc((self.delay / 4) as u16) as u8;
+            self.memory.interrupt_flags |= if_v;
+            if if_v == 4{
+                panic!("{:#x?}",self.memory.interrupt_flags);
+            }
+           
         }
         
         
@@ -688,11 +698,11 @@ impl CPU {
         }
 
         for b in 0..5{
-            if potential_interrupts & (1 << b) == 0{
+            if (potential_interrupts & (1 << b)) == 0{
                 continue
             }
 
-
+            //This does not get called
             self.memory.wb(0xFF0F, IF & !(1 << b));
 
             self.ime = false;
@@ -700,7 +710,7 @@ impl CPU {
             self.memory.wb(self.registers.sp.wrapping_sub(1), (self.registers.pc >> 8) as u8);
             self.memory.wb(self.registers.sp.wrapping_sub(2), (self.registers.pc & 0xFF) as u8);
             self.registers.sp = self.registers.sp.wrapping_sub(2);
-
+            panic!();
             match b{
                 0 => { self.registers.pc = 0x40; },
                 1 => { self.registers.pc = 0x48; },
@@ -709,7 +719,7 @@ impl CPU {
                 4 => { self.registers.pc = 0x60; },
                 _ => { panic!("Unknown IF!");}
             }
-            break
+            return
         }
     }
     pub fn execute(&mut self, opcode: u8, v: usize) -> u8{

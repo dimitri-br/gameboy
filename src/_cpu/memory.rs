@@ -46,7 +46,7 @@ impl Timer{
     }
 
     pub fn check(&mut self) -> u16{
-        let mut IF = 0;
+
         if self.tac & 4 != 0{
             
             let threshold = match self.tac & 3{
@@ -56,9 +56,9 @@ impl Timer{
                 3 => {16}
                 _ => {panic!()}
             };
-            if self.main >= threshold {IF = self.step()};
+            if self.main >= threshold {return self.step()};
         }
-        IF
+        0
     }
 
     pub fn step(&mut self) -> u16{
@@ -283,43 +283,44 @@ impl Memory{
             0x8000..=0x9000 => {self.gpu.wb(address, value);}
             0xA000..=0xB000 => {self.eram[(self.ramoffs + (address & 0x1FFF)) as usize] = value;}
             0xC000..=0xE000 => {self.wram[(address & 0x1FFF) as usize] = value;}
-            0xF000 => { match address & 0x0F00{
-                0x0..=0xD00 => {
-                    self.wram[(address & 0x1FFF) as usize] = value;
-                }
-                0xE00 => {
+            0xF000 => { 
+                match address & 0x0F00{
+                    0x0..=0xD00 => {
+                        self.wram[(address & 0x1FFF) as usize] = value;
+                    }
+                    0xE00 => {
 
-                    self.gpu.wb(address, value);
-                }
-                0xF00 => {
-                    if address == 0xFFFF { self.ie = value; }
-                    else if address >= 0xFF80{
-                        self.zram[(address & 0x7F)as usize] = value;
-                    }else{
-                        //io handling go here
-                        match address & 0x00FF{
-                            0x0 => {
-                                match address & 0xF{
-                                    0x0 => { } //inp
-                                    0x4..=0x7 => { self.timer.wb(address, value as u16);} //timer
-                                    0xF => { self.interrupt_flags = value; }
-                                    _ => {}
+                        self.gpu.wb(address, value);
+                    }
+                    0xF00 => {
+                        if address == 0xFFFF { self.ie = value; }
+                        else if address >= 0xFF80{
+                            self.zram[(address & 0x7F)as usize] = value;
+                        }else{
+                            //io handling go here
+                            match address & 0x00FF{
+                                0x0 => {
+                                    match address & 0xF{
+                                        0x0 => { } //inp
+                                        0x4..=0x7 => { self.timer.wb(address, value as u16);} //timer
+                                        0xF => { self.interrupt_flags = value; }
+                                        _ => {}
+                                    }
                                 }
-                            }
-                            0x10..=0x3F => { }//sound
-                            0x46 => {
-                                self.oamdma(value);
-                            }
-                            0x40..=0x4F => {
-                                
-                                self.gpu.wb(address, value);
-                            }
-                            0x68..=0x6B => {
-                                
-                                self.gpu.wb(address, value);
-                            }
-                            _ => {  }
-                        };
+                                0x10..=0x3F => { }//sound
+                                0x46 => {
+                                    self.oamdma(value);
+                                }
+                                0x40..=0x4F => {
+                                    
+                                    self.gpu.wb(address, value);
+                                }
+                                0x68..=0x6B => {
+                                    
+                                    self.gpu.wb(address, value);
+                                }
+                                _ => {  }
+                            };
                     }
                 }
                 _ => { panic!("memory: {:#x?}",address) }
