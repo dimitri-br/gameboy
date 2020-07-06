@@ -4,7 +4,93 @@ const VRAM_BEGIN: usize = 0x8000;
 const VRAM_END: usize = 0x9FFF;
 const VRAM_SIZE: usize = VRAM_END - VRAM_BEGIN + 1;
 
+pub struct Timer{
+    main: u16,
+    sub: u16,
+    div: u16,
 
+    reg_div: u16,
+    tima: u16,
+    tma: u16,
+    tac: u16,
+}
+impl Timer{
+    pub fn new() -> Self{
+        Timer {
+            main: 0,
+            sub: 0,
+            div: 0,
+
+            reg_div: 0,
+            tima: 0,
+            tma: 0,
+            tac: 0,
+        }
+    }
+
+    pub fn inc(&mut self, m: u16) -> u16{
+        self.sub += m;
+
+        if self.sub >= 4{
+            self.main += 1;
+            self.sub -= 4;
+
+
+            self.div += 1;
+            if self.div == 16{
+                self.reg_div = (self.reg_div + 1) & 255;
+                self.div = 0;
+            }
+        }
+        self.check()
+    }
+
+    pub fn check(&mut self) -> u16{
+        let mut IF = 0;
+        if self.tac & 4 != 0{
+            
+            let threshold = match self.tac & 3{
+                0 => {64}
+                1 => {1}
+                2 => {4}
+                3 => {16}
+                _ => {panic!()}
+            };
+            if self.main >= threshold {IF = self.step()};
+        }
+        IF
+    }
+
+    pub fn step(&mut self) -> u16{
+        self.main = 0;
+        self.tima += 1;
+        if self.tima > 255{
+            self.tima = self.tma;
+            return 4
+        }
+        return 0
+    }
+
+    pub fn rb(&mut self, addr: u16) -> u16{
+        match addr{
+            0xFF04 => {self.reg_div}
+            0xFF05 => {self.tima}
+            0xFF06 => {self.tma}
+            0xFF07 => {self.tac}
+            _ => {0}
+        }
+    }
+
+    pub fn wb(&mut self, addr: u16, val: u16){
+        match addr{
+            0xFF04 => {self.reg_div = 0;}
+            0xFF05 => {self.tima = val;}
+            0xFF06 => {self.tma = val;}
+            0xFF07 => {self.tac = val & 7;}
+            _ => {0;}
+        }
+    }
+}
 
 
 /// # MEMORY MAP
@@ -44,6 +130,8 @@ pub struct Memory{
     ramoffs: u16,
     pub interrupt_flags: u8,
     pub ie: u8,
+
+    pub timer: Timer,
 }
 
 impl Memory{
@@ -61,6 +149,8 @@ impl Memory{
 
             interrupt_flags: 0,
             ie: 0,
+
+            timer: Timer::new(),
         }
     }
     pub fn set_initial(&mut self) {
@@ -145,7 +235,7 @@ impl Memory{
                                 0x0 => {
                                     match address & 0x7{
                                         0x0 => { } //inp
-                                        0x4..=0x7 => { } //timer
+                                        0x4..=0x7 => { return self.timer.rb(address) as u8 } //timer
                                         0xF => {
                                             return self.interrupt_flags
                                         }
@@ -211,7 +301,7 @@ impl Memory{
                             0x0 => {
                                 match address & 0xF{
                                     0x0 => { } //inp
-                                    0x4..=0x7 => { } //timer
+                                    0x4..=0x7 => { self.timer.wb(address, value as u16);} //timer
                                     0xF => { self.interrupt_flags = value; }
                                     _ => {}
                                 }

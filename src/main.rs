@@ -112,7 +112,7 @@ fn main(){
     }
     println!("Finished!");
     
-    //save(trace_buffer);
+    save(trace_buffer);
 
     
 }

@@ -554,11 +554,12 @@ const CPU_COMMANDS : [&str; 512] = [
 pub struct CPU{
     pub memory: Memory,
     pub registers: Registers,
-    pub cpu_interrupt: bool,
+    pub ime: bool,
     pub delay: u32,
     pub pause: bool,
     pub halted: bool,
     pub debug: bool,
+    pub ime_delay: bool,
     pub trace: Vec::<String>,
 }
 
@@ -569,12 +570,15 @@ impl CPU {
         CPU { 
             memory: Memory::new(),
             registers: Registers::new(),
-            cpu_interrupt: true,
+            ime: true,
             delay: 4,
             pause: false,
             halted: false,
             debug: false,
+            ime_delay: false,
             trace: Vec::<String>::new(),
+
+
         }
     }
     pub fn init(&mut self){
@@ -615,84 +619,98 @@ impl CPU {
         self.delay = 0;
         self.trace = Vec::<String>::new();
         while self.delay < max_update{
-            let did_interrupt = self.check_interrupts();
-
-
-            if did_interrupt { 
-                self.delay += 4; 
-            }else if self.halted{
-                self.delay += 4;
-            }else{
-                let clockspeed = 4194304;
-            
-
-                let opcode = self.memory.rb(self.registers.pc);
-                let opcode_length = OPCODE_LENGTHS[opcode as usize];
-                let mut v : usize = 0;
-                if opcode_length == 2{
-                    v = self.memory.rb(self.registers.pc + 1) as usize;
-
-                }
-                if opcode_length == 3{
-                    let a = self.memory.rb(self.registers.pc + 2) as usize;
-                    let b = self.memory.rb(self.registers.pc + 1) as usize;
-                    v = (a << 8) + b;
-                }
-
-                let f = self.registers.get_f();
-                let mut trace = String::new();
-                if opcode == 0xCB{
-                    let cb = self.memory.rb(self.registers.pc + 1);
-                    trace = format!("A: {:x?} F: {:x?} B: {:x?} C: {:x?} D: {:x?} E: {:x?} H: {:x?} L: {:x?} SP: {:x?} PC: 00:{:x?} | Opcode: {:x?} : {:x?} -- {:x?}|{}\n", self.registers.a, f, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l, self.registers.sp, self.registers.pc, opcode, cb, v, CPU_COMMANDS[opcode as usize]);
-                }else{
-                    trace = format!("A: {:x?} F: {:x?} B: {:x?} C: {:x?} D: {:x?} E: {:x?} H: {:x?} L: {:x?} SP: {:x?} PC: 00:{:x?} | Opcode: {:x?} -- {:x?}|{}\n", self.registers.a, f, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l, self.registers.sp, self.registers.pc, opcode, v, CPU_COMMANDS[opcode as usize]);
-
-                }
-                //println!("{}",trace);
-                self.trace.push(trace);
-                if self.registers.pc == 0x100{
-
-                    self.memory.in_bios = false;
-                }
-                self.delay += self.execute(opcode, v) as u32;
-                
-                
-
-                
+            let opcode = self.memory.rb(self.registers.pc);
+            let opcode_length = OPCODE_LENGTHS[opcode as usize];
+            let mut v : usize = 0;
+            if opcode_length == 2{
+                v = self.memory.rb(self.registers.pc + 1) as usize;
             }
-            self.memory.gpu.do_cycle(self.delay / 4);
+            if opcode_length == 3{
+                let a = self.memory.rb(self.registers.pc + 2) as usize;
+                let b = self.memory.rb(self.registers.pc + 1) as usize;
+                v = (a << 8) + b;
+            }
+
+            self.memory.interrupt_flags |= self.memory.timer.inc((self.delay / 4) as u16) as u8;
+
+
+            self.check_interrupts();
+
+            if self.ime_delay{
+                self.ime_delay = false;
+                self.ime = true;
+            }
+            let clockspeed = 4194304;
             
+
+            
+
+            let f = self.registers.get_f();
+            let mut trace = String::new();
+            if opcode == 0xCB{
+                let cb = self.memory.rb(self.registers.pc + 1);
+                trace = format!("A: {:x?} F: {:x?} B: {:x?} C: {:x?} D: {:x?} E: {:x?} H: {:x?} L: {:x?} SP: {:x?} PC: 00:{:x?} | Opcode: {:x?} : {:x?} -- {:x?}|{}\n", self.registers.a, f, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l, self.registers.sp, self.registers.pc, opcode, cb, v, CPU_COMMANDS[opcode as usize]);
+            }else{
+                trace = format!("A: {:x?} F: {:x?} B: {:x?} C: {:x?} D: {:x?} E: {:x?} H: {:x?} L: {:x?} SP: {:x?} PC: 00:{:x?} | Opcode: {:x?} -- {:x?}|{}\n", self.registers.a, f, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l, self.registers.sp, self.registers.pc, opcode, v, CPU_COMMANDS[opcode as usize]);
+            }
+            //println!("{}",trace);
+            self.trace.push(trace);
+            if self.registers.pc == 0x100{
+                self.memory.in_bios = false;
+            }
+            self.delay += self.execute(opcode, v) as u32;
+                
+                
+
+                
+        
+            self.memory.gpu.do_cycle(self.delay / 4);
+
+            
+            self.memory.interrupt_flags |= self.memory.timer.inc((self.delay / 4) as u16) as u8;
         }
         
         
     }
 
 
-    fn check_interrupts(&mut self) -> bool{
-        if self.cpu_interrupt == false && self.halted == false{
-            return false;
-        }
-        let triggered = self.memory.interrupt_flags & self.memory.ie;
-        if triggered == 0{
-            return false;
-        }
-        self.halted = false;
-        if self.cpu_interrupt == false{
-            return false;
-        }
-        self.cpu_interrupt = false;
+    fn check_interrupts(&mut self){
+        let IF = self.memory.rb(0xFF0F);
+        let IE = self.memory.rb(0xFFFF);
 
-        let n = triggered.trailing_zeros();
-        if n > 5 {panic!("What u doing >:(");};
-        self.memory.interrupt_flags &= !(1 << n);
-        let pc = self.registers.pc;
+        let potential_interrupts = IF & IE & 0x1F;
 
-        self.memory.wb(self.registers.sp.wrapping_sub(1), (self.registers.pc >> 8) as u8);
-        self.memory.wb(self.registers.sp.wrapping_sub(2), (self.registers.pc & 0xFF) as u8);
-        self.registers.sp = self.registers.sp.wrapping_sub(2);
+        if potential_interrupts == 0{
+            return
+        }
+        if !self.ime{
+            return
+        }
 
-        self.registers.pc = 0x40 | ((n  as u16) << 3);
-        true
+        for b in 0..5{
+            if potential_interrupts & (1 << b) == 0{
+                continue
+            }
+
+
+            self.memory.wb(0xFF0F, IF & !(1 << b));
+
+            self.ime = false;
+
+            self.memory.wb(self.registers.sp.wrapping_sub(1), (self.registers.pc >> 8) as u8);
+            self.memory.wb(self.registers.sp.wrapping_sub(2), (self.registers.pc & 0xFF) as u8);
+            self.registers.sp = self.registers.sp.wrapping_sub(2);
+
+            match b{
+                0 => { self.registers.pc = 0x40; },
+                1 => { self.registers.pc = 0x48; },
+                2 => { self.registers.pc = 0x50; },
+                3 => { self.registers.pc = 0x58; },
+                4 => { self.registers.pc = 0x60; },
+                _ => { panic!("Unknown IF!");}
+            }
+            break
+        }
     }
     pub fn execute(&mut self, opcode: u8, v: usize) -> u8{
             match opcode{
@@ -1386,7 +1404,7 @@ impl CPU {
                     8
                 }
                 0x76 => {//HALT
-                    if self.cpu_interrupt == true{
+                    if self.ime == true{
                         self.halted = true;
                     }else{
                         self.registers.pc += 1;
@@ -1987,7 +2005,7 @@ impl CPU {
                     }
                 }
                 0xD9 => {
-                    self.cpu_interrupt = true;
+                    self.ime = true;
                     self.registers.pc = (self.memory.rb(self.registers.sp.wrapping_add(1)) as u16) << 8;
                     self.registers.pc |= self.memory.rb(self.registers.sp) as u16;
                     self.registers.sp = self.registers.sp.wrapping_add(2);
@@ -2131,7 +2149,8 @@ impl CPU {
                     8
                 }
                 0xF3 => {
-                    self.cpu_interrupt = false;
+                    self.ime_delay = false;
+                    self.ime = false;
                     self.registers.pc += 1;
                     4
                 }
@@ -2185,8 +2204,8 @@ impl CPU {
                     self.registers.pc += 3;
                     16
                 }
-                0xFB => {
-                    self.cpu_interrupt = true;
+                0xFB => { //EI
+                    self.ime_delay = true;
                     self.registers.pc += 1;
                     4
                 }
