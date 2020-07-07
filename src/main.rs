@@ -46,7 +46,7 @@ fn main(){
 
     
     //cpu.init(); //exit boot rom and set values
-    cpu.registers.pc = 0x0;
+    cpu.registers.pc = 0x100;
 
     println!("Set initial!");
 
@@ -112,7 +112,7 @@ fn main(){
     }
     println!("Finished!");
     
-    //save(trace_buffer);
+    save(trace_buffer);
 
     
 }

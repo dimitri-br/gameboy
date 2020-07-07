@@ -621,8 +621,8 @@ impl CPU {
         while self.delay < max_update{
             
 
-            self.check_interrupts();
             
+            self.check_interrupts();
 
             if self.ime_delay{
                 
@@ -643,10 +643,6 @@ impl CPU {
 
             let if_v = self.memory.timer.inc((self.delay / 4) as u16) as u8;
             self.memory.interrupt_flags |= if_v;
-            if if_v == 4{
-                panic!("{:#x?}",self.memory.interrupt_flags);
-            }
-
             
 
             let f = self.registers.get_f();
@@ -674,9 +670,9 @@ impl CPU {
 
             let if_v = self.memory.timer.inc((self.delay / 4) as u16) as u8;
             self.memory.interrupt_flags |= if_v;
-            if if_v == 4{
-                panic!("{:#x?}",self.memory.interrupt_flags);
-            }
+
+
+           
            
         }
         
@@ -688,8 +684,8 @@ impl CPU {
         let IF = self.memory.rb(0xFF0F);
         let IE = self.memory.rb(0xFFFF);
 
-        let potential_interrupts = IF & IE & 0x1F;
-
+        
+        let potential_interrupts = IF & IE;
         if potential_interrupts == 0{
             return
         }
@@ -710,7 +706,7 @@ impl CPU {
             self.memory.wb(self.registers.sp.wrapping_sub(1), (self.registers.pc >> 8) as u8);
             self.memory.wb(self.registers.sp.wrapping_sub(2), (self.registers.pc & 0xFF) as u8);
             self.registers.sp = self.registers.sp.wrapping_sub(2);
-            panic!();
+
             match b{
                 0 => { self.registers.pc = 0x40; },
                 1 => { self.registers.pc = 0x48; },
@@ -751,6 +747,7 @@ impl CPU {
                     4
                 }
                 0x5 => {
+
                     self.dec(Target::B);
                     self.registers.pc += 1;
                     4
@@ -998,7 +995,9 @@ impl CPU {
                     8
                 }
                 0x2A => {
+                    
                     let val = self.memory.rb(self.registers.get_hl()) as usize;
+                    if self.registers.pc == 0xc2c6 {println!("Current A: {} -> New A: {} (from HL: {:#x?})\nTAC: {:#x?}", self.registers.a, val, self.registers.get_hl(), self.memory.timer.tac)};
                     self.ld(Target::A, val);
                     self.registers.set_hl(self.registers.get_hl().wrapping_add(1));
                     self.registers.pc += 1;
@@ -1817,12 +1816,12 @@ impl CPU {
                     self.registers.c = self.memory.rb(self.registers.sp);
                     self.registers.sp = self.registers.sp.wrapping_add(2);
                     self.registers.pc += 1;
-
                     12
                 }
                 0xC2 => {
                     
                     if self.registers.get_zero() == false{
+                        
                         self.registers.pc = v as u16;
                         16
                     }else{
@@ -1851,8 +1850,6 @@ impl CPU {
                     self.memory.wb(self.registers.sp.wrapping_sub(2), self.registers.c);
                     self.registers.sp = self.registers.sp.wrapping_sub(2);
                     self.registers.pc += 1;
-                    
-                    
                     
                     16
                 }
