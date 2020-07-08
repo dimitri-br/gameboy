@@ -46,7 +46,7 @@ fn main(){
 
     
     //cpu.init(); //exit boot rom and set values
-    cpu.registers.pc = 0x100;
+    cpu.registers.pc = 0x0;
 
     println!("Set initial!");
 
@@ -112,18 +112,47 @@ fn main(){
     }
     println!("Finished!");
     
-    save(trace_buffer);
+
+    let mut buf = Vec::<String>::new();
+    for line in 0..0xA0{
+        let val = cpu.memory.gpu.voam[line];
+        let byte = format!("{:x?}", val);
+        buf.push(byte);
+    }
+    save(buf, "oam_dump.h8");
 
     
 }
+/*
 fn save(trace_buffer: Vec::<String>){
     use std::fs::File;
     use std::io::Write;
 
-    let mut file = File::create("trace.txt").unwrap();
+    let mut file = File::create("vram_dump.bin").unwrap();
     for line in trace_buffer.iter(){
         file.write(line.as_bytes()).unwrap();
     }
     file.flush().unwrap();
     println!("Saved file!")
+}
+*/
+use std::fs::File;
+use std::io::Write;
+fn save(buf: Vec::<String>, file_name: &str){
+    let mut file = File::create(file_name).expect("Error creating file");
+
+    let mut counter = 1;
+    for line in buf.iter(){
+        file.write(line.as_bytes()).unwrap();
+        if counter % 16 == 0{
+            file.write(b"\n").unwrap();
+        }else{
+            file.write(b" ").unwrap();
+        }
+        counter += 1;
+        
+    }
+    file.flush().unwrap();
+    println!("Saved file: {}", file_name);
+
 }

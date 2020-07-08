@@ -5,91 +5,72 @@ const VRAM_END: usize = 0x9FFF;
 const VRAM_SIZE: usize = VRAM_END - VRAM_BEGIN + 1;
 
 pub struct Timer{
-    main: u16,
-    sub: u16,
-    div: u16,
-
-    reg_div: u16,
-    tima: u16,
-    tma: u16,
-    pub tac: u16,
+    divider: u8,
+    counter: u8,
+    modulo: u8,
+    enabled: bool,
+    step: u32,
+    internal_cnt: u32,
+    internal_div: u32,
 }
 impl Timer{
     pub fn new() -> Self{
-        Timer {
-            main: 0,
-            sub: 0,
-            div: 0,
-
-            reg_div: 0,
-            tima: 0,
-            tma: 0,
-            tac: 0,
+        Timer{
+            divider: 0,
+            counter: 0,
+            modulo: 0,
+            enabled: false,
+            step: 256,
+            internal_cnt: 0,
+            internal_div: 0,
         }
     }
 
-    pub fn inc(&mut self, m: u16) -> u16{
-        self.sub += m;
-
-        if self.sub >= 4{
-            self.main += 1;
-            self.sub -= 4;
-
-
-            self.div += 1;
-            if self.div == 16{
-                self.reg_div = (self.reg_div + 1) & 255;
-                self.div = 0;
+    pub fn rb(&mut self, addr: u16) -> u8{
+        match addr {
+            0xFF04 => self.divider,
+            0xFF05 => self.counter,
+            0xFF06 => self.modulo,
+            0xFF07 => {
+                (if self.enabled { 0x4 } else { 0 }) |
+                (match self.step { 16 => 1, 64 => 2, 256 => 3, _ => 0 })
             }
+            _ => panic!("Timer does not handler read {:#x?}", addr),
         }
-        self.check()
     }
+    pub fn wb(&mut self, addr: u16, val: u8) {
+        match addr {
+            0xFF04 => { self.divider = 0; },
+            0xFF05 => { self.counter = val; },
+            0xFF06 => { self.modulo = val; },
+            0xFF07 => {
+                self.enabled = val & 0x4 != 0;
+                self.step = match val & 0x3 { 1 => 16, 2 => 64, 3 => 256, _ => 1024 };
+            },
+            _ => panic!("Timer does not handler write {:#x?}", addr),
+        };
+    }
+    pub fn do_cycle(&mut self, ticks: u32) -> u8 {
+        self.internal_div += ticks;
+        while self.internal_div >= 256 {
+            self.divider = self.divider.wrapping_add(1);
+            self.internal_div -= 256;
+        }
 
-    pub fn check(&mut self) -> u16{
+        if self.enabled {
+            self.internal_cnt += ticks;
 
-        if self.tac & 4 != 0{
+            while self.internal_cnt >= self.step {
+                self.counter = self.counter.wrapping_add(1);
+                if self.counter == 0 {
+                    self.counter = self.modulo;
+                    return 0x04;
+                }
+                self.internal_cnt -= self.step;
+            }
             
-            match self.tac & 3{
-                0 => {if 64 >= self.main { return self.step()}}
-                1 => {if 1 >= self.main { return self.step()}}
-                2 => {if 4 >= self.main { return self.step()}}
-                3 => {if 16 >= self.main { return self.step()}}
-                _ => {panic!()}
-            };
-
         }
-        0
-    }
-
-    pub fn step(&mut self) -> u16{
-        self.main = 0;
-        self.tima += 1;
-        if self.tima > 255{
-            self.tima = self.tma;
-            return 4
-        }
-        return 0
-    }
-
-    pub fn rb(&mut self, addr: u16) -> u16{
-        match addr{
-            0xFF04 => {self.reg_div}
-            0xFF05 => {self.tima}
-            0xFF06 => {self.tma}
-            0xFF07 => {self.tac}
-            _ => {0}
-        }
-    }
-
-    pub fn wb(&mut self, addr: u16, val: u16){
-        
-        match addr{
-            0xFF04 => {self.reg_div = 0;println!("Writing {:#x?} to reg_div", val);}
-            0xFF05 => {self.tima = val;println!("Writing {:#x?} to tima", val);}
-            0xFF06 => {self.tma = val;println!("Writing {:#x?} to tma", val);}
-            0xFF07 => {self.tac = val & 7;println!("Writing {:#x?} to tac", val);}
-            _ => {0;}
-        }
+        return 0x0;
     }
 }
 
@@ -235,7 +216,7 @@ impl Memory{
                             match address & 0x00FF{
                                 0x0..=0xF => {
                                     match address & 0xF{
-                                        0x0 => { } //inp
+                                        0x0 => { return 0xFF } //inp
                                         0x4..=0x7 => { return self.timer.rb(address) as u8 } //timer
                                         0xF => {
    
@@ -273,8 +254,7 @@ impl Memory{
         }
     }
     pub fn wb(&mut self, address: u16, value: u8){
-        
-       // println!("{:#x?}",address);
+
         //TODO - Add memory map
         match address & 0xF000{
             0x0000 => {
@@ -285,7 +265,7 @@ impl Memory{
             }
             0x8000..=0x9000 => {self.gpu.wb(address, value); }
             0xA000..=0xB000 => {self.eram[(self.ramoffs + (address & 0x1FFF)) as usize] = value;}
-            0xC000..=0xE000 => {self.wram[(address & 0x1FFF) as usize] = value; /*if address == 0xDFFB { println!("Wrote - {:#x?} - to DFFB", value)}*/}
+            0xC000..=0xE000 => {self.wram[(address & 0x1FFF) as usize] = value;}
             0xF000 => { 
                 match address & 0x0F00{
                     0x0..=0xD00 => {
@@ -296,7 +276,7 @@ impl Memory{
                         self.gpu.wb(address, value);
                     }
                     0xF00 => {
-                        if address == 0xFFFF { self.ie = value; println!("Wrote - {:#x?} - to IE", value) }
+                        if address == 0xFFFF { self.ie = value; }
                         else if address >= 0xFF80{
                             self.zram[(address & 0x7F)as usize] = value;
                         }else{
@@ -304,9 +284,9 @@ impl Memory{
                             match address & 0x00FF{
                                 0x0..=0x0F => {
                                     match address & 0xF{
-                                        0x0 => { } //inp
-                                        0x4..=0x7 => { self.timer.wb(address, value as u16); } //timer
-                                        0xF => { self.interrupt_flags = value; println!("Wrote - {:#x?} - to IF",value)} //IF
+                                        0x0 => {  } //inp
+                                        0x4..=0x7 => { self.timer.wb(address, value as u8);} //timer
+                                        0xF => { self.interrupt_flags = value; } //IF
                                         _ => {}
                                     }
                                 }
@@ -339,7 +319,7 @@ impl Memory{
     for i in 0 .. 0xA0 {
         let b = self.rb(base + i);
         self.wb(0xFE00 + i, b);
-    }
+        }
     }       
 }
 

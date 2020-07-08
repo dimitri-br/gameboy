@@ -601,7 +601,7 @@ impl CPU {
             index += 1;
         }
 
-        let mut rom = ROM::new(String::from("./roms/02.gb")); //TODO - 2
+        let mut rom = ROM::new(String::from("./roms/instr_timing.gb")); //TODO - :)
         rom.load();
         let mut index = 0x0;
         for line in rom.content.iter(){
@@ -621,7 +621,7 @@ impl CPU {
         while self.delay < max_update{
             
 
-            
+            let mut delay = 0x0;
             self.check_interrupts();
 
             if self.ime_delay{
@@ -629,51 +629,54 @@ impl CPU {
                 self.ime_delay = false;
                 self.ime = true;
             }
-            let opcode = self.memory.rb(self.registers.pc);
-            let opcode_length = OPCODE_LENGTHS[opcode as usize];
-            let mut v : usize = 0;
-            if opcode_length == 2{
-                v = self.memory.rb(self.registers.pc + 1) as usize;
-            }
-            if opcode_length == 3{
-                let a = self.memory.rb(self.registers.pc + 2) as usize;
-                let b = self.memory.rb(self.registers.pc + 1) as usize;
-                v = (a << 8) + b;
-            }
+            if !self.halted{
+                let opcode = self.memory.rb(self.registers.pc);
+                let opcode_length = OPCODE_LENGTHS[opcode as usize];
+                let mut v : usize = 0;
+                if opcode_length == 2{
+                    v = self.memory.rb(self.registers.pc + 1) as usize;
+                }
+                if opcode_length == 3{
+                    let a = self.memory.rb(self.registers.pc + 2) as usize;
+                    let b = self.memory.rb(self.registers.pc + 1) as usize;
+                    v = (a << 8) + b;
+                }
 
-            let if_v = self.memory.timer.inc((self.delay / 4) as u16) as u8;
-            self.memory.interrupt_flags |= if_v;
-            
-
-            let f = self.registers.get_f();
-            let mut trace = String::new();
-            if opcode == 0xCB{
-                let cb = self.memory.rb(self.registers.pc + 1);
-                trace = format!("A: {:x?} F: {:x?} B: {:x?} C: {:x?} D: {:x?} E: {:x?} H: {:x?} L: {:x?} SP: {:x?} PC: 00:{:x?} | Opcode: {:x?} : {:x?} -- {:x?}|{}\n", self.registers.a, f, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l, self.registers.sp, self.registers.pc, opcode, cb, v, CPU_COMMANDS[opcode as usize]);
-            }else{
-                trace = format!("A: {:x?} F: {:x?} B: {:x?} C: {:x?} D: {:x?} E: {:x?} H: {:x?} L: {:x?} SP: {:x?} PC: 00:{:x?} | Opcode: {:x?} -- {:x?}|{}\n", self.registers.a, f, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l, self.registers.sp, self.registers.pc, opcode, v, CPU_COMMANDS[opcode as usize]);
-            }
-            //println!("{}",trace);
-            self.trace.push(trace);
-            if self.registers.pc == 0x100{
-                self.memory.in_bios = false;
-            }
-            self.delay += self.execute(opcode, v) as u32;
-                
+                /*let if_v = self.memory.timer.do_cycle(self.delay);
+                self.memory.interrupt_flags |= if_v;*/
                 
 
+                let f = self.registers.get_f();
+                let mut trace = String::new();
+                if opcode == 0xCB{
+                    let cb = self.memory.rb(self.registers.pc + 1);
+                    trace = format!("A: {:x?} F: {:x?} B: {:x?} C: {:x?} D: {:x?} E: {:x?} H: {:x?} L: {:x?} SP: {:x?} PC: 00:{:x?} | Opcode: {:x?} : {:x?} -- {:x?}|{}\n", self.registers.a, f, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l, self.registers.sp, self.registers.pc, opcode, cb, v, CPU_COMMANDS[opcode as usize]);
+                }else{
+                    trace = format!("A: {:x?} F: {:x?} B: {:x?} C: {:x?} D: {:x?} E: {:x?} H: {:x?} L: {:x?} SP: {:x?} PC: 00:{:x?} | Opcode: {:x?} -- {:x?}|{}\n", self.registers.a, f, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l, self.registers.sp, self.registers.pc, opcode, v, CPU_COMMANDS[opcode as usize]);
+                }
+                //println!("{}",trace);
+                //self.trace.push(trace);
+                if self.registers.pc == 0x100{
+                    self.memory.in_bios = false;
+                }
+                delay = self.execute(opcode, v) as u32;
+                    
+                self.delay += delay;
                 
-        
-            self.memory.gpu.do_cycle(self.delay / 4);
-
-            
-
-            let if_v = self.memory.timer.inc((self.delay / 4) as u16) as u8;
-            self.memory.interrupt_flags |= if_v;
-
-
+            }else{   
+                //If halted           
+                delay = 4;
+                self.delay += delay;
+            }
            
-           
+                    
+            
+            self.memory.gpu.do_cycle(delay / 4);
+
+                
+
+            let if_v = self.memory.timer.do_cycle(delay);
+            self.memory.interrupt_flags |= if_v;
         }
         
         
@@ -684,15 +687,16 @@ impl CPU {
         let IF = self.memory.rb(0xFF0F);
         let IE = self.memory.rb(0xFFFF);
 
-        
         let potential_interrupts = IF & IE;
         if potential_interrupts == 0{
             return
+        }else{
+            self.halted = false;
         }
         if !self.ime{
             return
         }
-
+        self.halted = false;
         for b in 0..5{
             if (potential_interrupts & (1 << b)) == 0{
                 continue
@@ -997,7 +1001,6 @@ impl CPU {
                 0x2A => {
                     
                     let val = self.memory.rb(self.registers.get_hl()) as usize;
-                    if self.registers.pc == 0xc2c6 {println!("Current A: {} -> New A: {} (from HL: {:#x?})\nTAC: {:#x?}", self.registers.a, val, self.registers.get_hl(), self.memory.timer.tac)};
                     self.ld(Target::A, val);
                     self.registers.set_hl(self.registers.get_hl().wrapping_add(1));
                     self.registers.pc += 1;
@@ -1413,11 +1416,8 @@ impl CPU {
                     8
                 }
                 0x76 => {//HALT
-                    if self.ime == true{
-                        self.halted = true;
-                    }else{
-                        self.registers.pc += 1;
-                    }
+                    self.halted = true;
+                    self.registers.pc += 1;
                     4
                 }
                 0x77 => {
