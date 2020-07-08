@@ -601,7 +601,7 @@ impl CPU {
             index += 1;
         }
 
-        let mut rom = ROM::new(String::from("./roms/instr_timing.gb")); //TODO - :)
+        let mut rom = ROM::new(String::from("./roms/tetris.gb")); //TODO - :)
         rom.load();
         let mut index = 0x0;
         for line in rom.content.iter(){
@@ -623,6 +623,8 @@ impl CPU {
 
             let mut delay = 0x0;
             self.check_interrupts();
+            self.memory.pc = self.registers.pc;
+
 
             if self.ime_delay{
                 
@@ -659,24 +661,29 @@ impl CPU {
                 if self.registers.pc == 0x100{
                     self.memory.in_bios = false;
                 }
-                delay = self.execute(opcode, v) as u32;
-                    
-                self.delay += delay;
+                delay = (self.execute(opcode, v) as u32) / 4; //Make it M
+
+                
                 
             }else{   
                 //If halted           
-                delay = 4;
-                self.delay += delay;
+                delay = 1;
+                
             }
            
-                    
             
-            self.memory.gpu.do_cycle(delay / 4);
+                    
+            self.delay += delay;
+
+            self.memory.gpu.do_cycle(delay * 4);
 
                 
 
-            let if_v = self.memory.timer.do_cycle(delay);
-            self.memory.interrupt_flags |= if_v;
+            
+            self.memory.interrupt_flags |= self.memory.timer.do_cycle(delay * 4);
+
+            self.memory.interrupt_flags |= self.memory.gpu.interrupt;
+            self.memory.gpu.interrupt = 0;
         }
         
         
@@ -686,11 +693,12 @@ impl CPU {
     fn check_interrupts(&mut self){
         let IF = self.memory.rb(0xFF0F);
         let IE = self.memory.rb(0xFFFF);
-
+        
         let potential_interrupts = IF & IE;
         if potential_interrupts == 0{
             return
         }else{
+            
             self.halted = false;
         }
         if !self.ime{
@@ -706,17 +714,15 @@ impl CPU {
             self.memory.wb(0xFF0F, IF & !(1 << b));
 
             self.ime = false;
-
             self.memory.wb(self.registers.sp.wrapping_sub(1), (self.registers.pc >> 8) as u8);
             self.memory.wb(self.registers.sp.wrapping_sub(2), (self.registers.pc & 0xFF) as u8);
             self.registers.sp = self.registers.sp.wrapping_sub(2);
-
             match b{
-                0 => { self.registers.pc = 0x40; },
-                1 => { self.registers.pc = 0x48; },
-                2 => { self.registers.pc = 0x50; },
-                3 => { self.registers.pc = 0x58; },
-                4 => { self.registers.pc = 0x60; },
+                0 => { self.registers.pc = 0x40; println!("Vblank")},
+                1 => { self.registers.pc = 0x48; println!("LCD stat")},
+                2 => { self.registers.pc = 0x50; println!("Timer")},
+                3 => { self.registers.pc = 0x58; println!("Serial")},
+                4 => { self.registers.pc = 0x60; println!("Joypad")},
                 _ => { panic!("Unknown IF!");}
             }
             return
@@ -1899,7 +1905,7 @@ impl CPU {
                     let val = self.memory.rb(self.registers.pc);
                     let delay = self.execute_cb(val, v);
                     self.registers.pc += 1;
-                    4 + delay
+                    delay
                 }
                 0xCC => {
                     self.registers.pc += 3;
@@ -2075,6 +2081,10 @@ impl CPU {
                     self.registers.pc += 1;
                     8
                 }
+                0xE4 => {
+                    self.registers.pc += 1;
+                    4
+                }
                 0xE5 => {
                     self.memory.wb(self.registers.sp.wrapping_sub(1), self.registers.h);
                     self.memory.wb(self.registers.sp.wrapping_sub(2), self.registers.l);
@@ -2129,7 +2139,11 @@ impl CPU {
                     16
                 }
                 0xF0 => {
-                    let val = self.memory.rb(0xFF00 + ((v as u8) as u16));
+                    let mem_loc = 0xFF00 + (v as u8) as u16;
+                    let val = self.memory.rb(mem_loc);
+                    if v == 0xE3{
+                        //println!("Read {:#x?} from {:#x?}", val, 0xFF00 + v);
+                    }
                     self.ld(Target::A, val as usize);
                     self.registers.pc += 2;
                     12
@@ -2158,6 +2172,10 @@ impl CPU {
                 0xF3 => {
                     self.ime_delay = false;
                     self.ime = false;
+                    self.registers.pc += 1;
+                    4
+                }
+                0xF4 => {
                     self.registers.pc += 1;
                     4
                 }
@@ -2303,7 +2321,7 @@ impl CPU{
             }
             0xE => {
                 self.rrc(Target::HL);
-                8
+                16
             }
             0xF => {
                 self.rrc(Target::A);
@@ -4545,3 +4563,4 @@ pub enum Target{
     HL,
     SP
 }
+

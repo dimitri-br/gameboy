@@ -42,7 +42,7 @@ impl Timer{
         match addr {
             0xFF04 => { self.divider = 0; },
             0xFF05 => { self.counter = val; },
-            0xFF06 => { self.modulo = val; },
+            0xFF06 => { self.modulo = val; }, //tma
             0xFF07 => {
                 self.enabled = val & 0x4 != 0;
                 self.step = match val & 0x3 { 1 => 16, 2 => 64, 3 => 256, _ => 1024 };
@@ -73,7 +73,28 @@ impl Timer{
         return 0x0;
     }
 }
-
+pub struct Key{
+    pub rows: [u8; 2],
+    column: u8,
+}
+impl Key{
+    pub fn new() -> Self{
+        Key{
+            rows: [0xF; 2],
+            column: 0,
+        }
+    }
+    pub fn rb(&self) -> u8{
+        match self.column{
+            0x10 => {self.rows[0]},
+            0x20 => {self.rows[1]},
+            _ => {0},
+        }
+    }
+    pub fn wb(&mut self, value: u8){
+        self.column = value & 0x30;
+    }
+}
 
 /// # MEMORY MAP
 /// 
@@ -114,6 +135,9 @@ pub struct Memory{
     pub ie: u8,
 
     pub timer: Timer,
+    pub keys: Key,
+
+    pub pc: u16,
 }
 
 impl Memory{
@@ -133,6 +157,9 @@ impl Memory{
             ie: 0,
 
             timer: Timer::new(),
+            keys: Key::new(),
+
+            pc: 0,
         }
     }
     pub fn set_initial(&mut self) {
@@ -210,13 +237,13 @@ impl Memory{
                     0xF00 => {
                         if address == 0xFFFF { return self.ie }
                         else if address >= 0xFF80 && address <= 0xFFFE{
-                            self.zram[(address & 0x7F)as usize]
+                            self.zram[address as usize & 0x7F]
                         }else{
                             //io handling go here
                             match address & 0x00FF{
                                 0x0..=0xF => {
                                     match address & 0xF{
-                                        0x0 => { return 0xFF } //inp
+                                        0x0 => { return self.keys.rb() } //inp
                                         0x4..=0x7 => { return self.timer.rb(address) as u8 } //timer
                                         0xF => {
    
@@ -276,15 +303,20 @@ impl Memory{
                         self.gpu.wb(address, value);
                     }
                     0xF00 => {
-                        if address == 0xFFFF { self.ie = value; }
-                        else if address >= 0xFF80{
-                            self.zram[(address & 0x7F)as usize] = value;
+                        if address == 0xFFFF { /*println!("Wrote '{:#x?}' to IE.... PC: {:#x?}", value, self.pc);*/self.ie = value; }
+                        else if address >= 0xFF80 && address < 0xFFFF{
+                           /* if address == 0xFFE3 && value == 0x3{
+                                println!("FFE3:{:#x?}",value);
+                            }else if address == 0xFFE3 && value == 0x2F{
+                                panic!("What the fuck do you think you're doing?... PC: {:#x?}", self.pc)
+                            }*/
+                            self.zram[address as usize & 0x7F] = value;
                         }else{
                             //io handling go here
                             match address & 0x00FF{
                                 0x0..=0x0F => {
                                     match address & 0xF{
-                                        0x0 => {  } //inp
+                                        0x0 => { self.keys.wb(value as u8); } //inp
                                         0x4..=0x7 => { self.timer.wb(address, value as u8);} //timer
                                         0xF => { self.interrupt_flags = value; } //IF
                                         _ => {}

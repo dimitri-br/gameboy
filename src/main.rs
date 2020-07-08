@@ -52,6 +52,23 @@ fn main(){
 
 
     println!("Debugging! \n\n");
+
+
+
+
+
+
+
+
+
+
+
+/*
+    //test
+    cpu.memory.ie = 0xFF;
+    cpu.memory.wb(0xFFE3, 0x3);
+    println!("{:#x?}",cpu.memory.rb(0xFFE3));
+    panic!();*/
     'running: loop{
         
         //clr screen
@@ -66,8 +83,31 @@ fn main(){
                 Event::KeyDown { keycode, .. } => {
                     match keycode  {
                         Some(Keycode::Escape) => break 'running,
+                        Some(Keycode::Up) => {cpu.memory.keys.rows[1] &= 0xB}
+                        Some(Keycode::Down) => {cpu.memory.keys.rows[1] &= 0x7}
+                        Some(Keycode::Left) => {cpu.memory.keys.rows[1] &= 0xD}
+                        Some(Keycode::Right) => {cpu.memory.keys.rows[1] &= 0xE}
+
+                        Some(Keycode::Space) => {cpu.memory.keys.rows[0] &= 0xB}
+                        Some(Keycode::Return) => {cpu.memory.keys.rows[0] &= 0x7;}
+                        Some(Keycode::X) => {cpu.memory.keys.rows[0] &= 0xD}
+                        Some(Keycode::Z) => {cpu.memory.keys.rows[0] &= 0xE}
                         _ => {}
 
+                    }
+                },
+                Event::KeyUp { keycode, .. } => {
+                    match keycode{
+                        Some(Keycode::Up) => {cpu.memory.keys.rows[1] |= 0x4}
+                        Some(Keycode::Down) => {cpu.memory.keys.rows[1] |= 0x8}
+                        Some(Keycode::Left) => {cpu.memory.keys.rows[1] |= 0x2}
+                        Some(Keycode::Right) => {cpu.memory.keys.rows[1] |= 0x1}
+
+                        Some(Keycode::Space) => {cpu.memory.keys.rows[0] |= 0x4}
+                        Some(Keycode::Return) => {cpu.memory.keys.rows[0] |= 0x8}
+                        Some(Keycode::X) => {cpu.memory.keys.rows[0] |= 0xD}
+                        Some(Keycode::Z) => {cpu.memory.keys.rows[0] |= 0xE}
+                        _ => {}
                     }
                 }
                 _ => {}
@@ -112,30 +152,25 @@ fn main(){
     }
     println!("Finished!");
     
-
-    let mut buf = Vec::<String>::new();
-    for line in 0..0xA0{
-        let val = cpu.memory.gpu.voam[line];
-        let byte = format!("{:x?}", val);
-        buf.push(byte);
-    }
-    save(buf, "oam_dump.h8");
+    println!("IE: {:#x?}", cpu.memory.ie);
+    
+    save(trace_buffer);
 
     
 }
-/*
+
 fn save(trace_buffer: Vec::<String>){
     use std::fs::File;
     use std::io::Write;
 
-    let mut file = File::create("vram_dump.bin").unwrap();
+    let mut file = File::create("trace.txt").unwrap();
     for line in trace_buffer.iter(){
         file.write(line.as_bytes()).unwrap();
     }
     file.flush().unwrap();
     println!("Saved file!")
 }
-*/
+/*
 use std::fs::File;
 use std::io::Write;
 fn save(buf: Vec::<String>, file_name: &str){
@@ -156,3 +191,4 @@ fn save(buf: Vec::<String>, file_name: &str){
     println!("Saved file: {}", file_name);
 
 }
+*/
