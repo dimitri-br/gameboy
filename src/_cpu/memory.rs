@@ -409,10 +409,10 @@ impl Memory{
                         }else{
                             self.mbc.rombank &= 0x1F;
                             self.mbc.rombank |= ((value as usize) & 3) << 5;
-                            println!("RomBank {}", self.mbc.rombank);
+                            //println!("RomBank {}", self.mbc.rombank);
 
                             self.romoffs = (self.mbc.rombank as usize) * 0x4000;
-                            println!("romoff -> {}", self.romoffs);
+                            //println!("romoff -> {}", self.romoffs);
                         }
                     }
                     0xF..=0x13 => {

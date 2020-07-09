@@ -1,6 +1,7 @@
 mod cpu;
 mod _cpu;
 
+use std::env;
 
 use cpu::*;
 
@@ -21,14 +22,24 @@ const WIDTH : u32 = 320;
 const HEIGHT : u32 = 144*2;
 
 fn main(){
-    println!("Starting...");
+    
+    //get rom to run (Can be run through drag n drop or cmd)
+    let args: Vec<String> = env::args().collect();
+
+    let rom = &args[1];
+
+
+    println!("• File: {}",rom);
+
+
+    println!("• Starting...");
     let mut trace_buffer = Vec::<String>::new();
     let scale_x = (WIDTH / 160) as u32;
     let scale_y = (HEIGHT / 144) as u32;
     //sdl and gfx
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
-    let title = format!("GameBoy");
+    let title = format!("GameBoy - {}", rom);
     let window = video_subsystem.window(&title, WIDTH, HEIGHT)
         .position_centered()
         .build()
@@ -40,19 +51,17 @@ fn main(){
     let mut event_pump = sdl_context.event_pump().unwrap(); 
     
 
-    println!("Loaded screen!");
+    println!("• Setup Display!");
     let mut cpu = CPU::new();
-    cpu.load_rom();
-    println!("Loaded ROM!");
+    cpu.load_rom(rom.to_string());
+    println!("• Loaded ROM Successfully!");
 
     
     //cpu.init(); //exit boot rom and set values
-    cpu.registers.pc = 0x0;
-
-    println!("Set initial!");
+    cpu.registers.pc = 0x0; //start at 0
 
 
-    println!("Debugging! \n\n");
+
 
 
 
@@ -106,8 +115,8 @@ fn main(){
 
                         Some(Keycode::Space) => {cpu.memory.keys.rows[0] |= 0x4}
                         Some(Keycode::Return) => {cpu.memory.keys.rows[0] |= 0x8}
-                        Some(Keycode::X) => {cpu.memory.keys.rows[0] |= 0xD}
-                        Some(Keycode::Z) => {cpu.memory.keys.rows[0] |= 0xE}
+                        Some(Keycode::X) => {cpu.memory.keys.rows[0] |= 0x2}
+                        Some(Keycode::Z) => {cpu.memory.keys.rows[0] |= 0x1}
                         _ => {}
                     }
                 }

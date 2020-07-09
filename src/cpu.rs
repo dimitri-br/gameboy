@@ -589,7 +589,7 @@ impl CPU {
         self.registers.sp = 0xFFFE;
         self.memory.set_initial();
     }
-    pub fn load_rom(&mut self){
+    pub fn load_rom(&mut self, file: String){
         let mut rom = ROM::new(String::from("./roms/boot.bin"));
         rom.load();
         let mut index = 0x0;
@@ -598,7 +598,7 @@ impl CPU {
             index += 1;
         }
 
-        let mut rom = ROM::new(String::from("./roms/red.gb")); //TODO - :)
+        let mut rom = ROM::new(file); //TODO - :)
         rom.load();
         let mut index = 0x0;
         for line in rom.content.iter(){
