@@ -176,6 +176,8 @@ pub struct Memory{
 
 
     pub rom_name: String,
+
+    pub saved: bool,
 }
 
 impl Memory{
@@ -205,6 +207,8 @@ impl Memory{
             pc: 0,
 
             rom_name: String::from("Err.sav"),
+
+            saved: false,
         }
     }
     pub fn set_initial(&mut self) {
@@ -356,17 +360,26 @@ impl Memory{
                     1..=3 => {
                         self.mbc.ram_on = value == 0xA;
                         //println!("External RAM: {}", self.mbc.ram_on);
-                        if !self.mbc.ram_on{
+                        if !self.mbc.ram_on && !self.saved{
                             self.save_sram();
+                            self.saved = true;
                         }
 
                     }
                     0xF..=0x13 => {
                         self.mbc.ram_on = value == 0xA;
+                        if !self.mbc.ram_on && !self.saved{
+                            self.save_sram();
+                            self.saved = true;
+                        }
                     }
 
                     0x19..=0x1E => {
                         self.mbc.ram_on = value == 0xA;
+                        if !self.mbc.ram_on && !self.saved{
+                            self.save_sram();
+                            self.saved = true;
+                        }
                     }
                     _ => {}
                 }

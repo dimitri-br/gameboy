@@ -26,11 +26,11 @@ fn main(){
     //get rom to run (Can be run through drag n drop or cmd)
     let args: Vec<String> = env::args().collect();
 
-    let rom = &args[1];
+    let rom = args[1].to_owned();
 
 
-
-
+    let rom_name : Vec::<&str> = rom.split("/").collect();
+    let rom_name = rom_name.last().unwrap();
 
     println!("• Starting...");
     let mut trace_buffer = Vec::<String>::new();
@@ -39,11 +39,11 @@ fn main(){
     //sdl and gfx
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
-    let title = format!("GameBoy - {}", rom);
+    let title = format!("GameBoy - {}", rom_name);
     let window = video_subsystem.window(&title, WIDTH, HEIGHT)
+        .opengl()
         .position_centered()
         .build()
-        
         .unwrap();
  
     let mut canvas = window.into_canvas().build().unwrap();
@@ -164,7 +164,7 @@ fn main(){
         //thread::sleep(std::time::Duration::from_nanos(((4000000 / 4) / 60) * cpu.delay as u64));
         
     }
-    cpu.memory.save_sram();
+    //cpu.memory.save_sram();
     println!("• Finished!");
     
     //save(trace_buffer);

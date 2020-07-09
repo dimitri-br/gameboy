@@ -619,6 +619,7 @@ impl CPU {
         let max_update = 69905;
         self.delay = 0;
         self.trace = Vec::<String>::new();
+        self.memory.saved = false;
         while self.delay < max_update{
             
 
