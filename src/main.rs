@@ -5,8 +5,6 @@ use std::env;
 
 use cpu::*;
 
-use std::io::{stdin, Read};
-use std::thread;
 extern crate sdl2; 
 
 
@@ -79,12 +77,6 @@ fn main(){
 
 
 
-/*
-    //test
-    cpu.memory.ie = 0xFF;
-    cpu.memory.wb(0xFFE3, 0x3);
-    println!("{:#x?}",cpu.memory.rb(0xFFE3));
-    panic!();*/
     'running: loop{
         
         //clr screen
@@ -163,10 +155,8 @@ fn main(){
             
         } 
         canvas.present();
-        //thread::sleep(std::time::Duration::from_millis(16));
         
     }
-    //cpu.memory.save_sram();
     println!("• Finished!");
     
     //save(trace_buffer);

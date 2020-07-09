@@ -3,9 +3,9 @@
 Please note this is a working emulator, and is still being actively worked on
 
 
-Tested Games:
+# Tested Games:
 
-Pokemon Red/Blue/Yellow/Silver/Gold
+<strong>Pokemon Red/Blue/Yellow/Silver/Gold</strong>
 
 Tetris
 
