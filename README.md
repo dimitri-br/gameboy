@@ -1,6 +1,16 @@
 # Gameboy Emulator in rust
 
-Please note this is NOT a complete emulator, and is still being actively worked on
+Please note this is a working emulator, and is still being actively worked on
+
+
+Tested Games:
+
+Pokemon Red/Blue/Yellow/Silver/Gold
+
+Tetris
+
+Mario Land
+
 
 Here are some good sources if you are looking for help in developing one:
 

@@ -1,4 +1,5 @@
 /target
+/debugger
 /*.dll
 /*.lib
 /trace.txt
