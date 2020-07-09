@@ -29,7 +29,7 @@ fn main(){
     let rom = &args[1];
 
 
-    println!("• File: {}",rom);
+
 
 
     println!("• Starting...");
@@ -56,7 +56,11 @@ fn main(){
     cpu.load_rom(rom.to_string());
     println!("• Loaded ROM Successfully!");
 
-    
+    for _ in 0..0x20000{
+        cpu.memory.eram.push(0x0);
+    }
+    cpu.memory.rom_name = rom.to_string();
+    cpu.memory.load_sram();
     //cpu.init(); //exit boot rom and set values
     cpu.registers.pc = 0x0; //start at 0
 
@@ -160,8 +164,9 @@ fn main(){
         //thread::sleep(std::time::Duration::from_nanos(((4000000 / 4) / 60) * cpu.delay as u64));
         
     }
+    cpu.memory.save_sram();
     println!("• Finished!");
-        
+    
     //save(trace_buffer);
 
     

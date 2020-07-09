@@ -156,7 +156,7 @@ pub struct Memory{
     pub bios: [u8; 0x100], //bios (becomes available to rom after boot)
     pub rom: Vec::<u8>, //rom
     wram: [u8; 0x2000], //working ram
-    eram: [u8; 0x7FFF], //external ram (On cartridge)
+    pub eram: Vec::<u8>, //external ram (On cartridge)
     zram: [u8; 0x80], //zero ram (everything 0xFF80 +)
 
     ramoffs: usize,
@@ -173,6 +173,9 @@ pub struct Memory{
     pub keys: Key,
 
     pub pc: u16,
+
+
+    pub rom_name: String,
 }
 
 impl Memory{
@@ -183,7 +186,7 @@ impl Memory{
             bios: [0x0; 0x100],
             rom: Vec::<u8>::new(),
             wram: [0x0; 0x2000],
-            eram: [0x0; 0x7FFF],
+            eram: Vec::<u8>::new(),
             zram: [0x0; 0x80],
 
             ramoffs: 0,
@@ -200,6 +203,8 @@ impl Memory{
             keys: Key::new(),
 
             pc: 0,
+
+            rom_name: String::from("Err.sav"),
         }
     }
     pub fn set_initial(&mut self) {
@@ -351,6 +356,9 @@ impl Memory{
                     1..=3 => {
                         self.mbc.ram_on = value == 0xA;
                         //println!("External RAM: {}", self.mbc.ram_on);
+                        if !self.mbc.ram_on{
+                            self.save_sram();
+                        }
 
                     }
                     0xF..=0x13 => {
@@ -568,11 +576,43 @@ impl Memory{
 
            
     fn oamdma(&mut self, value: u8) {
-    let base = (value as u16) << 8;
-    for i in 0 .. 0xA0 {
-        let b = self.rb(base + i);
-        self.wb(0xFE00 + i, b);
+        let base = (value as u16) << 8;
+        for i in 0 .. 0xA0 {
+            let b = self.rb(base + i);
+            self.wb(0xFE00 + i, b);
         }
-    }       
+    }
+    
+    pub fn save_sram(&mut self){
+        use std::fs::File;
+        use std::io::Write;
+        let path = format!("{}.sav",self.rom_name);
+        let mut file = File::create(&path).unwrap();
+
+        file.write_all(&self.eram).unwrap();
+        file.flush().unwrap();
+
+    }
+
+    pub fn load_sram(&mut self){
+        use std::fs::File;
+        use std::io::Read;
+        let path = format!("{}.sav",self.rom_name);
+        let file = File::open(&path);
+        let mut file = match file{
+            Ok(ok) => ok,
+            Err(_) => return,
+        };
+        println!("• Found .sav for ROM!");
+        let mut buffer = Vec::<u8>::new();
+        file.read_to_end(&mut buffer).unwrap();
+
+        let mut counter = 0;
+        for line in buffer.iter(){
+            
+            self.eram[counter] = *line;
+            counter += 1;
+        }
+    }
 }
 
