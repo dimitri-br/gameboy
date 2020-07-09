@@ -2,3 +2,10 @@
 /*.dll
 /*.lib
 /trace.txt
+/*.zip
+/*.gb
+/*.gbc
+/*.sav
+/*.h8
+/*.dump
+/*.exe

@@ -42,8 +42,10 @@ fn main(){
     let title = format!("GameBoy - {}", rom_name);
     let window = video_subsystem.window(&title, WIDTH, HEIGHT)
         .opengl()
+
         .position_centered()
         .build()
+        
         .unwrap();
  
     let mut canvas = window.into_canvas().build().unwrap();
@@ -161,7 +163,7 @@ fn main(){
             
         } 
         canvas.present();
-        //thread::sleep(std::time::Duration::from_nanos(((4000000 / 4) / 60) * cpu.delay as u64));
+        //thread::sleep(std::time::Duration::from_millis(16));
         
     }
     //cpu.memory.save_sram();
