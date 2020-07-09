@@ -21,6 +21,7 @@ const WIDTH : u32 = 320;
 const HEIGHT : u32 = 144*2;
 
 fn main(){
+    println!("Starting...");
     let mut trace_buffer = Vec::<String>::new();
     let scale_x = (WIDTH / 160) as u32;
     let scale_y = (HEIGHT / 144) as u32;
@@ -39,7 +40,7 @@ fn main(){
     let mut event_pump = sdl_context.event_pump().unwrap(); 
     
 
-    //println!("Loaded screen!");
+    println!("Loaded screen!");
     let mut cpu = CPU::new();
     cpu.load_rom();
     println!("Loaded ROM!");
@@ -150,11 +151,9 @@ fn main(){
         //thread::sleep(std::time::Duration::from_nanos(((4000000 / 4) / 60) * cpu.delay as u64));
         
     }
-    println!("Finished!");
-    
-    println!("IE: {:#x?}", cpu.memory.ie);
-    
-    save(trace_buffer);
+    println!("• Finished!");
+        
+    //save(trace_buffer);
 
     
 }

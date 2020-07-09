@@ -594,20 +594,21 @@ impl CPU {
         rom.load();
         let mut index = 0x0;
         for line in rom.content.iter(){
-            if index == 0x100{
-                break;
-            }
             self.memory.bios[index] = *line;
             index += 1;
         }
 
-        let mut rom = ROM::new(String::from("./roms/tetris.gb")); //TODO - :)
+        let mut rom = ROM::new(String::from("./roms/red.gb")); //TODO - :)
         rom.load();
         let mut index = 0x0;
         for line in rom.content.iter(){
-            self.memory.rom[index] = *line;
+            self.memory.rom.push(*line);
             index += 1;
         }
+        println!("• Length of ROM: {} -> {}", index, self.memory.rom.len());
+
+        self.memory.carttype = self.memory.rom[0x0147];
+        println!("• Cart Type: {:#x?}",self.memory.carttype);
 
     }
 }
@@ -675,7 +676,7 @@ impl CPU {
                     
             self.delay += delay;
 
-            self.memory.gpu.do_cycle(delay * 4);
+            self.memory.gpu.do_cycle(delay);
 
                 
 
@@ -694,6 +695,7 @@ impl CPU {
         let IF = self.memory.rb(0xFF0F);
         let IE = self.memory.rb(0xFFFF);
         
+        
         let potential_interrupts = IF & IE;
         if potential_interrupts == 0{
             return
@@ -701,6 +703,7 @@ impl CPU {
             
             self.halted = false;
         }
+       
         if !self.ime{
             return
         }
@@ -718,11 +721,11 @@ impl CPU {
             self.memory.wb(self.registers.sp.wrapping_sub(2), (self.registers.pc & 0xFF) as u8);
             self.registers.sp = self.registers.sp.wrapping_sub(2);
             match b{
-                0 => { self.registers.pc = 0x40; println!("Vblank")},
-                1 => { self.registers.pc = 0x48; println!("LCD stat")},
-                2 => { self.registers.pc = 0x50; println!("Timer")},
-                3 => { self.registers.pc = 0x58; println!("Serial")},
-                4 => { self.registers.pc = 0x60; println!("Joypad")},
+                0 => { self.registers.pc = 0x40;},
+                1 => { self.registers.pc = 0x48;},
+                2 => { self.registers.pc = 0x50;},
+                3 => { self.registers.pc = 0x58;},
+                4 => { self.registers.pc = 0x60;},
                 _ => { panic!("Unknown IF!");}
             }
             return
@@ -838,10 +841,6 @@ impl CPU {
                     4
                 }
                 0x11 => {
-                    if v == 0x0{
-                        self.debug = true;
-                        println!("START OF TEST 6\n\n\n");
-                    }
                     self.ld(Target::DE, v);
                     self.registers.pc += 3;
                     12
@@ -2080,6 +2079,10 @@ impl CPU {
                     self.memory.wb(0xff00 + (self.registers.c as u16), self.registers.a);
                     self.registers.pc += 1;
                     8
+                }
+                0xE3 => {
+                    self.registers.pc += 1;
+                    4
                 }
                 0xE4 => {
                     self.registers.pc += 1;

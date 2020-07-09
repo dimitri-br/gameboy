@@ -1,4 +1,5 @@
 use super::gpu::*;
+use std::time;
 // this file contains memory + functions
 const VRAM_BEGIN: usize = 0x8000;
 const VRAM_END: usize = 0x9FFF;
@@ -51,26 +52,26 @@ impl Timer{
         };
     }
     pub fn do_cycle(&mut self, ticks: u32) -> u8 {
-        self.internal_div += ticks;
-        while self.internal_div >= 256 {
-            self.divider = self.divider.wrapping_add(1);
-            self.internal_div -= 256;
+        self.internal_div += ticks; //add cycle count from last instruction
+        while self.internal_div >= 256 { //if the internal_div is bigger than 0x100
+            self.divider = self.divider.wrapping_add(1); //add to div
+            self.internal_div -= 256; //reset
         }
 
-        if self.enabled {
-            self.internal_cnt += ticks;
+        if self.enabled { //if timer is enabled
+            self.internal_cnt += ticks; //add cycle count to internal_cnt
 
-            while self.internal_cnt >= self.step {
-                self.counter = self.counter.wrapping_add(1);
-                if self.counter == 0 {
-                    self.counter = self.modulo;
-                    return 0x04;
+            while self.internal_cnt >= self.step { //step is 256
+                self.counter = self.counter.wrapping_add(1); //add to counter. If counter goes over 255, it wraps back to 0
+                if self.counter == 0 { //if it is 0
+                    self.counter = self.modulo; //set counter to mod
+                    return 0x04; //for interrupt
                 }
-                self.internal_cnt -= self.step;
+                self.internal_cnt -= self.step; //internal count - 256
             }
             
         }
-        return 0x0;
+        return 0x0; //for interrupt
     }
 }
 pub struct Key{
@@ -93,6 +94,34 @@ impl Key{
     }
     pub fn wb(&mut self, value: u8){
         self.column = value & 0x30;
+    }
+}
+
+
+
+pub struct MBC{
+    rombank: usize,
+    rambank: usize,
+    ram_on: bool,
+    mode: u8,
+
+    rtc_ram: [u8; 5],
+    rtc_lock: bool,
+    rtc_zero: Option<u64>,
+}
+impl MBC{
+    pub fn new() -> Self{
+        MBC{
+            rombank: 0,
+            rambank: 0,
+            ram_on: false,
+            mode: 0,
+
+            rtc_ram: [0u8; 5],
+            rtc_lock: false,
+            rtc_zero: Some(0),
+        
+        }
     }
 }
 
@@ -125,12 +154,18 @@ pub struct Memory{
     pub gpu: GPU,
     pub in_bios: bool,
     pub bios: [u8; 0x100], //bios (becomes available to rom after boot)
-    pub rom: [u8; 0xFFFF], //rom
+    pub rom: Vec::<u8>, //rom
     wram: [u8; 0x2000], //working ram
-    eram: [u8; 0x2000], //external ram (On cartridge)
+    eram: [u8; 0x7FFF], //external ram (On cartridge)
     zram: [u8; 0x80], //zero ram (everything 0xFF80 +)
 
-    ramoffs: u16,
+    ramoffs: usize,
+    romoffs: usize,
+
+    mbc: MBC,
+
+    pub carttype: u8,
+
     pub interrupt_flags: u8,
     pub ie: u8,
 
@@ -146,12 +181,17 @@ impl Memory{
             gpu: GPU::new(),
             in_bios: true,
             bios: [0x0; 0x100],
-            rom: [0xFF; 0xFFFF],
+            rom: Vec::<u8>::new(),
             wram: [0x0; 0x2000],
-            eram: [0x0; 0x2000],
+            eram: [0x0; 0x7FFF],
             zram: [0x0; 0x80],
 
             ramoffs: 0,
+            romoffs: 0x4000,
+
+            mbc: MBC::new(),
+
+            carttype: 0,
 
             interrupt_flags: 0,
             ie: 0,
@@ -204,23 +244,45 @@ impl Memory{
                     if address < 0x100{
                         self.bios[address as usize]
                     }
-                    else if address >= 0x100{
+                    else{
                         
                         self.rom[address as usize]
                     }
-                    else{
-                        0
-                    }
+
                 }else{
                     self.rom[address as usize]
                 }
             }
-            0x1000..=0x7000 => {self.rom[address as usize]}
+            0x1000..=0x3000 => {self.rom[address as usize]}
+            0x4000..=0x7000 => {
+                self.rom[(self.romoffs + ((address as usize) & 0x3FFF))]
+            }
             0x8000..=0x9000 => {
                 self.gpu.rb(address)
             }
             0xA000..=0xB000 => {
-                self.eram[(self.ramoffs + (address & 0x1FFF)) as usize]
+                if !self.mbc.ram_on { return 0 };
+                match self.carttype{
+                    1..=3 => {
+                        self.eram[(self.ramoffs + ((address as usize) & 0x1FFF))]
+
+                    }
+                    0xF..=0x13 => {
+                        if self.mbc.rambank <= 3{
+                            self.eram[(self.ramoffs + ((address as usize) & 0x1FFF))]
+                        }else{
+                            self.mbc.rtc_ram[(self.mbc.rambank - 0x8) as usize]
+                            
+                        }
+                    }
+
+                    0x19..=0x1E => {
+                        self.eram[(self.ramoffs + ((address as usize) & 0x1FFF))]
+                    }
+                    _ => {
+                        0
+                    }
+                }
             }
             0xC000..=0xE000 => {
                 self.wram[(address & 0x1FFF) as usize]
@@ -284,14 +346,173 @@ impl Memory{
 
         //TODO - Add memory map
         match address & 0xF000{
-            0x0000 => {
-                self.rom[address as usize] = value;
+            0x0000..=0x1000 => {
+                match self.carttype{
+                    1..=3 => {
+                        self.mbc.ram_on = value == 0xA;
+                        //println!("External RAM: {}", self.mbc.ram_on);
+
+                    }
+                    0xF..=0x13 => {
+                        self.mbc.ram_on = value == 0xA;
+                    }
+
+                    0x19..=0x1E => {
+                        self.mbc.ram_on = value == 0xA;
+                    }
+                    _ => {}
+                }
             } //TODO - add MBC
-            0x1000..=0x7000 => {
-                self.rom[address as usize] = value;
+            0x2000..=0x3000 => {
+                match self.carttype{
+                    1..=3 => {
+                        self.mbc.rombank &= 0x60;
+                        let mut value = value & 0x1F;
+                        if value == 0{
+                            value = 1;
+                        }
+                        self.mbc.rombank |= value as usize;
+                        //println!("RomBank {}", self.mbc.rombank);
+                        self.romoffs = (self.mbc.rombank as usize) * 0x4000;
+                       // println!("romoff -> {}", self.romoffs);
+                    }
+                    0xF..=0x13 => {
+                        self.mbc.rombank = match value & 0x7F { 0 => 1, n => n as usize };
+                        self.romoffs = (self.mbc.rombank as usize) * 0x4000;
+                    }
+                    0x19..=0x1E => {
+                        match address & 0xF000{
+                            0x2000 => {
+                                self.mbc.rombank = (self.mbc.rombank & 0x100) | (value as usize);
+                                self.romoffs = (self.mbc.rombank as usize) * 0x4000;
+                            }
+                            0x3000 => {
+                                self.mbc.rombank = (self.mbc.rombank & 0xFF) | (((value & 0x1) as usize) << 8);
+                                self.romoffs = (self.mbc.rombank as usize) * 0x4000;
+                            }
+                            _ => {}
+                        }
+                        //println!("RomBank {}", self.mbc.rombank);
+                        
+                    }
+                    _ => {}
+                }
+            }
+            0x4000..=0x5000 => {
+                match self.carttype{
+                    1..=3 => {
+                        if self.mbc.mode != 0{
+                            self.mbc.rambank = (value as usize) & 3;
+//                            println!("RamBank{}", self.mbc.rombank);
+
+                            self.ramoffs = (self.mbc.rambank as usize) * 0x2000;
+                        }else{
+                            self.mbc.rombank &= 0x1F;
+                            self.mbc.rombank |= ((value as usize) & 3) << 5;
+                            println!("RomBank {}", self.mbc.rombank);
+
+                            self.romoffs = (self.mbc.rombank as usize) * 0x4000;
+                            println!("romoff -> {}", self.romoffs);
+                        }
+                    }
+                    0xF..=0x13 => {
+                        self.mbc.rambank = value as usize;
+                        self.ramoffs = self.mbc.rambank * 0x2000;
+                    }
+                    0x19..=0x1E => {
+                        self.mbc.rambank = (value & 0x0F) as usize;
+                        self.ramoffs = self.mbc.rambank * 0x2000;
+                        //println!("RamBank {}", self.mbc.rambank);
+                    }
+                    _ => {}
+                }
+            }
+            0x6000..=0x7000 => {
+                match self.carttype{
+                    1..=3 => {
+                        self.mbc.mode = value & 0x1;
+                    }
+                    0xF..=0x13 => {
+                        match value{
+                            0 => {
+                                self.mbc.rtc_lock = false
+                            }
+                            1 => {
+                                if !self.mbc.rtc_lock{
+                                    let tzero = match self.mbc.rtc_zero {
+                                        Some(t) => time::UNIX_EPOCH + time::Duration::from_secs(t),
+                                        None => return,
+                                    };
+                                    if self.mbc.rtc_ram[4] & 0x40 == 0x40 { return }
+                            
+                                    let difftime = match time::SystemTime::now().duration_since(tzero) {
+                                        Ok(n) => { n.as_secs() },
+                                        _ => { 0 },
+                                    };
+                                    self.mbc.rtc_ram[0] = (difftime % 60) as u8;
+                                    self.mbc.rtc_ram[1] = ((difftime / 60) % 60) as u8;
+                                    self.mbc.rtc_ram[2] = ((difftime / 3600) % 24) as u8;
+                                    let days = difftime / (3600*24);
+                                    self.mbc.rtc_ram[3] = days as u8;
+                                    self.mbc.rtc_ram[4] = (self.mbc.rtc_ram[4] & 0xFE) | (((days >> 8) & 0x01) as u8);
+                                    if days >= 512 {
+                                        self.mbc.rtc_ram[4] |= 0x80;
+                                        if self.mbc.rtc_zero.is_none() { return }
+                                        let mut difftime = match time::SystemTime::now().duration_since(time::UNIX_EPOCH) {
+                                            Ok(t) => t.as_secs(),
+                                            Err(_) => panic!("System clock is set to a time before the unix epoch."),
+                                        };
+                                        difftime -= self.mbc.rtc_ram[0] as u64;
+                                        difftime -= (self.mbc.rtc_ram[1] as u64) * 60;
+                                        difftime -= (self.mbc.rtc_ram[2] as u64) * 3600;
+                                        let days = ((self.mbc.rtc_ram[4] as u64 & 0x1) << 8) | (self.mbc.rtc_ram[3] as u64);
+                                        difftime -= days * 3600 * 24;
+                                        self.mbc.rtc_zero = Some(difftime);
+                                    }
+                                }
+                                self.mbc.rtc_lock = true;
+                            }
+                            _ => {}
+
+                        }
+                    }
+                    _ => {}
+                }
             }
             0x8000..=0x9000 => {self.gpu.wb(address, value); }
-            0xA000..=0xB000 => {self.eram[(self.ramoffs + (address & 0x1FFF)) as usize] = value;}
+            0xA000..=0xB000 => {
+                if !self.mbc.ram_on { return };
+                match self.carttype{
+                    1..=3 => {
+                        self.eram[(self.ramoffs + ((address as usize) & 0x1FFF))] = value;
+
+                    }
+                    0xF..=0x13 => {
+                        if self.mbc.rambank <= 3{
+                            self.eram[(self.ramoffs + ((address as usize) & 0x1FFF))] = value;
+                        }else{
+                            self.mbc.rtc_ram[(self.mbc.rambank as usize) - 0x8] = value;
+                            if self.mbc.rtc_zero.is_none() { return }
+                            let mut difftime = match time::SystemTime::now().duration_since(time::UNIX_EPOCH) {
+                                Ok(t) => t.as_secs(),
+                                Err(_) => panic!("System clock is set to a time before the unix epoch."),
+                            };
+                            difftime -= self.mbc.rtc_ram[0] as u64;
+                            difftime -= (self.mbc.rtc_ram[1] as u64) * 60;
+                            difftime -= (self.mbc.rtc_ram[2] as u64) * 3600;
+                            let days = ((self.mbc.rtc_ram[4] as u64 & 0x1) << 8) | (self.mbc.rtc_ram[3] as u64);
+                            difftime -= days * 3600 * 24;
+                            self.mbc.rtc_zero = Some(difftime);
+                        }
+                    }
+
+                    0x19..=0x1E => {
+                        self.eram[(self.ramoffs + ((address as usize) & 0x1FFF))] = value;
+                    }
+                    _ => {}
+                }
+                
+            }
             0xC000..=0xE000 => {self.wram[(address & 0x1FFF) as usize] = value;}
             0xF000 => { 
                 match address & 0x0F00{
