@@ -40,13 +40,14 @@ fn main(){
     let title = format!("GameBoy - {}", rom_name);
     let window = video_subsystem.window(&title, WIDTH, HEIGHT)
         .opengl()
-
+        
         .position_centered()
         .build()
         
         .unwrap();
  
-    let mut canvas = window.into_canvas().build().unwrap();
+    
+    let mut canvas = window.into_canvas().accelerated().build().unwrap();
 
     let mut event_pump = sdl_context.event_pump().unwrap(); 
     

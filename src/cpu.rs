@@ -598,7 +598,7 @@ impl CPU {
             index += 1;
         }
 
-        let mut rom = ROM::new(file); //TODO - :)
+        let mut rom = ROM::new(file); //TODO - None!
         rom.load();
         let mut index = 0x0;
         for line in rom.content.iter(){
