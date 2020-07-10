@@ -54,6 +54,7 @@ pub struct GPU {
     csprit: [[[u8; 3]; 4]; 8],
     vrambank: usize,
     pub data: Vec<u8>,
+    pub screen: Vec<u8>,
     bgprio: [PrioType; SCREEN_W],
     pub updated: bool,
     pub interrupt: u8,
@@ -93,6 +94,7 @@ impl GPU {
             vram: [0; VRAM_SIZE],
             voam: [0; VOAM_SIZE],
             data: vec![0; SCREEN_W * SCREEN_H * 3],
+            screen: vec![0; SCREEN_W * SCREEN_H * 3],
             bgprio: [PrioType::Normal; SCREEN_W],
             updated: false,
             interrupt: 0,
@@ -131,6 +133,7 @@ impl GPU {
 
                 // This is a VBlank line
                 if self.line >= 144 && self.mode != 1 {
+                    
                     self.change_mode(1);
                 }
             }
@@ -139,7 +142,7 @@ impl GPU {
             if self.line < 144 {
                 if self.modeclock <= 80 {
                     if self.mode != 2 { self.change_mode(2); }
-                } else if self.modeclock <= (80 + 172) { // 252 cycles
+                } else if self.modeclock <= 252 { // 252 cycles
                     if self.mode != 3 { self.change_mode(3); }
                 } else { // the remaining 204
                     if self.mode != 0 { self.change_mode(0); }
@@ -165,6 +168,7 @@ impl GPU {
             },
             1 => {
                 self.interrupt |= 0x01;
+                self.screen = self.data.clone();
                 self.updated = true;
                 self.m1_inte
             },
@@ -308,6 +312,7 @@ impl GPU {
         for v in self.data.iter_mut() {
             *v = 255;
         }
+        self.screen = self.data.clone();
         self.updated = true;
     }
 

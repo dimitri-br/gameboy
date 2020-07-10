@@ -675,9 +675,9 @@ impl CPU {
            
             
                     
-            self.delay += delay;
+            self.delay += delay * 4;
 
-            self.memory.gpu.do_cycle(delay);
+            self.memory.gpu.do_cycle(delay * 4);
 
                 
 

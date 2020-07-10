@@ -38,16 +38,17 @@ fn main(){
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
     let title = format!("GameBoy - {}", rom_name);
-    let window = video_subsystem.window(&title, WIDTH, HEIGHT)
-        .opengl()
+    let mut window = video_subsystem.window(&title, WIDTH, HEIGHT)
+        //.opengl()
         
         .position_centered()
         .build()
         
         .unwrap();
  
+    window.set_display_mode(sdl2::video::DisplayMode{ format: sdl2::pixels::PixelFormatEnum::RGB565, w: WIDTH as i32, h: HEIGHT as i32, refresh_rate: 60}).unwrap();
     
-    let mut canvas = window.into_canvas().accelerated().build().unwrap();
+    let mut canvas = window.into_canvas().accelerated().present_vsync().build().unwrap();
 
     let mut event_pump = sdl_context.event_pump().unwrap(); 
     
@@ -141,30 +142,36 @@ fn main(){
         if cpu.registers.pc > 0xFFFF{
             break 'running;
         }
+        
         for x in 0..160{
             for y in 0..144{
-                
-                
-                let p1 = cpu.memory.gpu.data[y * 160 * 3 + x * 3 + 0];
-                let p2 = cpu.memory.gpu.data[y * 160 * 3 + x * 3 + 1];
-                let p3 = cpu.memory.gpu.data[y * 160 * 3 + x * 3 + 2];
-                canvas.set_draw_color(Color::RGB(p1, p2, p3));
-                
-                canvas.fill_rect(Rect::new((x * scale_x as usize) as i32, (y * scale_y as usize) as i32, scale_x, scale_y)).unwrap();
-                
+                    
+                    
+                let p1 = cpu.memory.gpu.screen[y * 160 * 3 + x * 3 + 0]; //get R
+                let p2 = cpu.memory.gpu.screen[y * 160 * 3 + x * 3 + 1]; //get G
+                let p3 = cpu.memory.gpu.screen[y * 160 * 3 + x * 3 + 2]; //get B
+                canvas.set_draw_color(Color::RGB(p1, p2, p3)); //set draw color to RGB
+                    
+                canvas.fill_rect(Rect::new((x * scale_x as usize) as i32, (y * scale_y as usize) as i32, scale_x, scale_y)).unwrap(); //draw pixel at x, y with appropriate scale
+                    
             }
-            
+                
         } 
+            
+        
         canvas.present();
         
+        
+        
+        
     }
-    println!("• Finished!");
+    println!("• Finished Hope you enjoyed playing :)");
     
     //save(trace_buffer);
 
     
 }
-
+/*
 fn save(trace_buffer: Vec::<String>){
     use std::fs::File;
     use std::io::Write;
@@ -176,7 +183,7 @@ fn save(trace_buffer: Vec::<String>){
     file.flush().unwrap();
     println!("Saved file!")
 }
-/*
+
 use std::fs::File;
 use std::io::Write;
 fn save(buf: Vec::<String>, file_name: &str){
