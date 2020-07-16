@@ -581,8 +581,26 @@ impl CPU {
 
         }
     }
+    pub fn new_cgb() -> Self{
+        CPU { 
+            memory: Memory::new_cgb(),
+            registers: Registers::new(),
+            ime: true,
+            delay: 4,
+            pause: false,
+            halted: false,
+            debug: false,
+            ime_delay: false,
+            trace: Vec::<String>::new(),
+
+
+        }
+    }
     pub fn init(&mut self){
         self.registers.set_af(0x01B0);
+        if self.memory.gbmode == GbMode::Color{
+            self.registers.a = 0x11;
+        }
         self.registers.set_bc(0x0013);
         self.registers.set_de(0x00D8);
         self.registers.set_hl(0x014D);
@@ -602,7 +620,29 @@ impl CPU {
         rom.load();
         let mut index = 0x0;
         for line in rom.content.iter(){
-            self.memory.rom.push(*line);
+            self.memory.rom[index] = *line;
+            index += 1;
+        }
+        println!("• Length of ROM: {} -> {}", index, self.memory.rom.len());
+
+        self.memory.carttype = self.memory.rom[0x0147];
+        println!("• Cart Type: {:#x?}",self.memory.carttype);
+
+    }
+    pub fn load_rom_cgb(&mut self, file: String){
+        /*let mut rom = ROM::new(String::from("./roms/cgb_bios.bin"));
+        rom.load();
+        let mut index = 0x0;
+        for line in rom.content.iter(){
+            self.memory.bios[index] = *line;
+            index += 1;
+        }*/
+
+        let mut rom = ROM::new(file); //TODO - None!
+        rom.load();
+        let mut index = 0x0;
+        for line in rom.content.iter(){
+            self.memory.rom[index] = *line;
             index += 1;
         }
         println!("• Length of ROM: {} -> {}", index, self.memory.rom.len());
@@ -616,13 +656,17 @@ impl CPU {
 //opcodes
 impl CPU {
     pub fn step(&mut self){
+        let cpudivider = match self.memory.gbspeed {
+            GbSpeed::Single => 1,
+            GbSpeed::Double => 2,
+        };
         let max_update = 69905;
         self.delay = 0;
         self.trace = Vec::<String>::new();
         self.memory.saved = false;
         while self.delay < max_update{
             
-
+            
             let mut delay = 0x0;
             self.check_interrupts();
             self.memory.pc = self.registers.pc;
@@ -676,13 +720,17 @@ impl CPU {
             
                     
             self.delay += delay * 4;
+            let vram_ticks = self.memory.perform_vramdma();
 
-            self.memory.gpu.do_cycle(delay * 4);
+            let cpu_ticks = (delay * 4) + vram_ticks * cpudivider;
+            let gpu_ticks = (delay * 4) / cpudivider + vram_ticks;
+
+            self.memory.gpu.do_cycle(gpu_ticks);
 
                 
 
             
-            self.memory.interrupt_flags |= self.memory.timer.do_cycle(delay * 4);
+            self.memory.interrupt_flags |= self.memory.timer.do_cycle(cpu_ticks);
 
             self.memory.interrupt_flags |= self.memory.gpu.interrupt;
             self.memory.gpu.interrupt = 0;
@@ -838,6 +886,7 @@ impl CPU {
                     4
                 }
                 0x10 => {
+                    self.memory.switch_speed();
                     self.registers.pc += 2;
                     4
                 }

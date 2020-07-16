@@ -16,8 +16,8 @@ use sdl2::rect::Rect;
 
 
 
-const WIDTH : u32 = 320;
-const HEIGHT : u32 = 144*2;
+const WIDTH : u32 = 160*4;
+const HEIGHT : u32 = 144*4;
 
 fn main(){
     
@@ -25,7 +25,14 @@ fn main(){
     let args: Vec<String> = env::args().collect();
 
     let rom = args[1].to_owned();
+    let cgb = args[2].to_owned();
 
+    let mut mode = false;
+    if cgb == "color"{
+        mode = true;
+    }else{
+        mode = false;
+    }
 
     let rom_name : Vec::<&str> = rom.split("/").collect();
     let rom_name = rom_name.last().unwrap();
@@ -55,7 +62,18 @@ fn main(){
 
     println!("• Setup Display!");
     let mut cpu = CPU::new();
-    cpu.load_rom(rom.to_string());
+
+    if mode{
+        cpu = CPU::new_cgb();
+        cpu.load_rom(rom.to_string());
+        cpu.memory.determine_mode();
+    }else{
+        cpu = CPU::new();
+        cpu.load_rom(rom.to_string());
+    }
+    
+    
+    
     println!("• Loaded ROM Successfully!");
 
     for _ in 0..0x20000{
@@ -63,8 +81,9 @@ fn main(){
     }
     cpu.memory.rom_name = rom.to_string();
     cpu.memory.load_sram();
-    //cpu.init(); //exit boot rom and set values
-    cpu.registers.pc = 0x0; //start at 0
+    cpu.init(); //exit boot rom and set values
+    cpu.registers.pc = 0x100; //start at 
+    
 
 
 
@@ -129,9 +148,9 @@ fn main(){
         }else{
             println!("Halt!");
         }
-        for trace in cpu.trace.iter(){
+        /*for trace in cpu.trace.iter(){
             trace_buffer.push(trace.clone());
-        }
+        }*/
         
 
         
@@ -167,11 +186,11 @@ fn main(){
     }
     println!("• Finished Hope you enjoyed playing :)");
     
-    //save(trace_buffer);
+   // save(trace_buffer);
 
     
 }
-/*
+
 fn save(trace_buffer: Vec::<String>){
     use std::fs::File;
     use std::io::Write;
@@ -183,7 +202,7 @@ fn save(trace_buffer: Vec::<String>){
     file.flush().unwrap();
     println!("Saved file!")
 }
-
+/*
 use std::fs::File;
 use std::io::Write;
 fn save(buf: Vec::<String>, file_name: &str){

@@ -1,4 +1,6 @@
-#[derive(PartialEq, Copy, Clone)]
+//Thanks to RBOY on github for helping me!
+
+#[derive(PartialEq, Copy, Clone, Debug)]
 pub enum GbMode {
     Classic,
     Color,
@@ -44,8 +46,8 @@ pub struct GPU {
     palb: [u8; 4],
     pal0: [u8; 4],
     pal1: [u8; 4],
-    pub vram: [u8; VRAM_SIZE],
-    pub voam: [u8; VOAM_SIZE],
+    vram: [u8; VRAM_SIZE],
+    voam: [u8; VOAM_SIZE],
     cbgpal_inc: bool,
     cbgpal_ind: u8,
     cbgpal: [[[u8; 3]; 4]; 8],
@@ -133,7 +135,6 @@ impl GPU {
 
                 // This is a VBlank line
                 if self.line >= 144 && self.mode != 1 {
-                    
                     self.change_mode(1);
                 }
             }
@@ -142,7 +143,7 @@ impl GPU {
             if self.line < 144 {
                 if self.modeclock <= 80 {
                     if self.mode != 2 { self.change_mode(2); }
-                } else if self.modeclock <= 252 { // 252 cycles
+                } else if self.modeclock <= (80 + 172) { // 252 cycles
                     if self.mode != 3 { self.change_mode(3); }
                 } else { // the remaining 204
                     if self.mode != 0 { self.change_mode(0); }
@@ -232,7 +233,7 @@ impl GPU {
                     ((self.csprit[palnum][colnum][1] & 0x18) >> 3) | (self.csprit[palnum][colnum][2] << 2)
                 }
             },
-            _ => 0,
+            _ => panic!("GPU does not handle read {:04X}", a),
         }
     }
 
@@ -304,7 +305,7 @@ impl GPU {
                 }
                 if self.csprit_inc { self.csprit_ind = (self.csprit_ind + 1) & 0x3F; };
             },
-            _ => {},
+            _ => panic!("GPU does not handle write {:04X}", a),
         }
     }
 
